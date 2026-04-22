@@ -1,0 +1,2 @@
+[console_scripts]
+ojs-sast = ojs_sast.cli:cli

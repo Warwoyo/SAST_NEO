@@ -1,0 +1,56 @@
+rules:
+  - id: "OJS-SC-UPL-001"
+    name: "Unsafe file upload - extension not validated"
+    description: >
+      File upload handling does not properly validate the file extension,
+      potentially allowing PHP files to be uploaded and executed.
+    severity: "CRITICAL"
+    category: "source_code"
+    subcategory: "file_ops"
+    cwe: "CWE-434"
+    owasp: "A04:2021"
+    pattern_match:
+      type: "regex"
+      patterns:
+        - 'move_uploaded_file\s*\(\s*\$_FILES\[.*?\]\[.tmp_name.\].*?\$_FILES\[.*?\]\[.name.\]'
+        - 'move_uploaded_file.*?(?!.*?(pathinfo|extension|whitelist|allowed))'
+    remediation: >
+      Validate file extensions against a strict whitelist.
+      Check MIME type using finfo_file(). Store files outside web root.
+
+  - id: "OJS-SC-UPL-002"
+    name: "File upload using client-supplied filename"
+    description: >
+      The original filename from the upload is used directly,
+      which could contain path traversal or dangerous extensions.
+    severity: "HIGH"
+    category: "source_code"
+    subcategory: "file_ops"
+    cwe: "CWE-434"
+    owasp: "A04:2021"
+    pattern_match:
+      type: "regex"
+      patterns:
+        - '\$_FILES\[.*?\]\[["\'']name["\'']\](?!.*?basename)'
+    remediation: >
+      Generate a random filename server-side. If the original name
+      is needed, sanitize it with basename() and validate the extension.
+
+  - id: "OJS-SC-UPL-003"
+    name: "MIME type check bypass"
+    description: >
+      File type validation relies only on the Content-Type header,
+      which can be easily spoofed by attackers.
+    severity: "MEDIUM"
+    category: "source_code"
+    subcategory: "file_ops"
+    cwe: "CWE-434"
+    owasp: "A04:2021"
+    pattern_match:
+      type: "regex"
+      patterns:
+        - '\$_FILES\[.*?\]\[["\'']type["\'']\]\s*==\s*'
+        - 'Content-Type.*?(?!.*?finfo|mime_content_type|magic)'
+    remediation: >
+      Use finfo_file() with FILEINFO_MIME_TYPE to detect the actual
+      file type from magic bytes, not the client-supplied Content-Type.

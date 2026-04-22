@@ -1,0 +1,63 @@
+rules:
+  - id: "OJS-SC-AUTH-001"
+    name: "Session fixation vulnerability"
+    description: >
+      The application does not regenerate session IDs after authentication,
+      allowing session fixation attacks.
+    severity: "HIGH"
+    category: "source_code"
+    subcategory: "auth"
+    cwe: "CWE-384"
+    owasp: "A07:2021"
+    pattern_match:
+      type: "regex"
+      patterns:
+        - 'session_start\s*\(\s*\)(?!.*session_regenerate_id)'
+        - '\$_SESSION\[.*?=.*?(?!session_regenerate_id)'
+    remediation: >
+      Call session_regenerate_id(true) after successful authentication
+      to prevent session fixation.
+    references:
+      - "https://cwe.mitre.org/data/definitions/384.html"
+
+  - id: "OJS-SC-AUTH-002"
+    name: "Weak token generation for password reset"
+    description: >
+      Password reset tokens are generated using weak randomness
+      (rand(), mt_rand(), uniqid()) instead of cryptographically secure methods.
+    severity: "HIGH"
+    category: "source_code"
+    subcategory: "auth"
+    cwe: "CWE-330"
+    owasp: "A02:2021"
+    pattern_match:
+      type: "regex"
+      patterns:
+        - '(reset|token|password).*?(rand\(|mt_rand\(|uniqid\(|md5\(time)'
+        - '(rand|mt_rand|uniqid)\s*\(.*?(token|reset|password|secret)'
+    remediation: >
+      Use random_bytes() or openssl_random_pseudo_bytes() for generating
+      security tokens. In OJS, use PKPSecurity::generateRandomToken().
+
+  - id: "OJS-SC-AUTH-003"
+    name: "Hardcoded authentication credentials"
+    description: >
+      Authentication credentials are hardcoded in the source code,
+      which could be exposed through source code leaks.
+    severity: "CRITICAL"
+    category: "source_code"
+    subcategory: "auth"
+    cwe: "CWE-798"
+    owasp: "A07:2021"
+    pattern_match:
+      type: "regex"
+      patterns:
+        - '(password|passwd|pwd)\s*=\s*["\''][^"\'']{3,}["\'']'
+        - '(api_key|apikey|api_secret)\s*=\s*["\''][^"\'']{8,}["\'']'
+        - 'auth.*?=.*?["\''][A-Za-z0-9+/=]{20,}["\'']'
+    remediation: >
+      Store credentials in environment variables or a secure configuration
+      file outside the web root. Never hardcode secrets in source code.
+    false_positive_notes: >
+      This may trigger on configuration templates or documentation.
+      Verify the file is actual production code before flagging.

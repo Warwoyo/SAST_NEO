@@ -1,0 +1,183 @@
+"""Main scan orchestrator for OJS-SAST.
+
+Coordinates all category scanners, collects findings, and generates reports.
+"""
+
+import os
+import time
+import uuid
+from datetime import datetime
+
+from ojs_sast import __version__
+from ojs_sast.categories.config.scanner import ConfigScanner
+from ojs_sast.categories.source_code.scanner import SourceCodeScanner
+from ojs_sast.categories.uploaded_file.scanner import UploadedFileScanner
+from ojs_sast.models.finding import Finding, Severity
+from ojs_sast.models.report import ScanReport
+from ojs_sast.reporters.html_reporter import generate_html_report
+from ojs_sast.reporters.json_reporter import generate_json_report
+from ojs_sast.reporters.sarif_reporter import generate_sarif_report
+from ojs_sast.rules.loader import RuleLoader
+from ojs_sast.utils.logger import logger
+from ojs_sast.utils.ojs_detector import OJSInstallation, detect_ojs
+
+
+class ScanOrchestrator:
+    """Main orchestrator that runs all scanners and generates reports."""
+
+    def __init__(
+        self,
+        target_path: str,
+        categories: list[str] | None = None,
+        nginx_config: str | None = None,
+        apache_config: str | None = None,
+        min_severity: str = "INFO",
+        upload_dirs: list[str] | None = None,
+    ) -> None:
+        self.target_path = os.path.abspath(target_path)
+        self.categories = categories or ["source_code", "config", "uploaded_file"]
+        self.nginx_config = nginx_config
+        self.apache_config = apache_config
+        self.min_severity = min_severity
+        self.upload_dirs = upload_dirs or []
+        self.findings: list[Finding] = []
+        self.files_scanned = 0
+        self.ojs_info: OJSInstallation | None = None
+
+    def run(self) -> ScanReport:
+        """Execute the full scan pipeline.
+
+        Returns:
+            ScanReport with all findings and metadata.
+        """
+        start_time = time.time()
+        scan_id = str(uuid.uuid4())[:8]
+        timestamp = datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
+
+        logger.info(f"OJS-SAST v{__version__} | Scanning: {self.target_path}")
+        logger.info("=" * 50)
+
+        # Step 1: Detect OJS installation
+        self.ojs_info = detect_ojs(self.target_path)
+        if self.ojs_info.is_valid:
+            logger.info(f"OJS installation detected (v{self.ojs_info.version or 'unknown'})")
+        else:
+            logger.warning("Target may not be a valid OJS installation")
+
+        for warning in self.ojs_info.warnings:
+            logger.warning(warning)
+
+        # Step 2: Load rules
+        rule_loader = RuleLoader()
+        rules_loaded = rule_loader.load_all_builtin_rules()
+
+        # Step 3: Run category scanners
+        if "source_code" in self.categories:
+            logger.info("[source_code] Scanning PHP files...")
+            sc_scanner = SourceCodeScanner(rule_loader.rules, self.target_path)
+            sc_findings = sc_scanner.scan()
+            self.findings.extend(sc_findings)
+            self.files_scanned += sc_scanner.files_scanned
+
+        if "config" in self.categories:
+            logger.info("[config] Scanning configurations...")
+            cfg_scanner = ConfigScanner(
+                rule_loader.rules,
+                self.target_path,
+                nginx_config=self.nginx_config,
+                apache_config=self.apache_config,
+            )
+            cfg_findings = cfg_scanner.scan()
+            self.findings.extend(cfg_findings)
+
+        if "uploaded_file" in self.categories:
+            logger.info("[uploaded] Scanning upload directories...")
+            upload_dirs = self._resolve_upload_dirs()
+            if upload_dirs:
+                uf_scanner = UploadedFileScanner(rule_loader.rules, upload_dirs)
+                uf_findings = uf_scanner.scan()
+                self.findings.extend(uf_findings)
+                self.files_scanned += uf_scanner.files_scanned
+
+        # Step 4: Filter by minimum severity
+        if self.min_severity != "INFO":
+            self.findings = self._filter_by_severity(self.findings, self.min_severity)
+
+        # Step 5: Build report
+        duration = time.time() - start_time
+        summary = ScanReport.compute_summary(self.findings)
+
+        report = ScanReport(
+            scan_id=scan_id,
+            timestamp=timestamp,
+            ojs_version=self.ojs_info.version if self.ojs_info else None,
+            ojs_path=self.target_path,
+            scan_duration_seconds=round(duration, 2),
+            findings=self.findings,
+            summary=summary,
+            scanner_version=__version__,
+            categories_scanned=self.categories,
+            files_scanned=self.files_scanned,
+            rules_loaded=rules_loaded,
+        )
+
+        return report
+
+    def generate_reports(self, report: ScanReport) -> str:
+        """Generate all report formats and return the output directory.
+
+        Args:
+            report: The completed scan report.
+
+        Returns:
+            Absolute path to the timestamped output directory.
+        """
+        # Create timestamped output directory
+        ts_folder = datetime.now().strftime("%Y%m%d_%H%M%S")
+        base_results = os.path.join(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+            "results",
+        )
+        output_dir = os.path.join(base_results, ts_folder)
+        os.makedirs(output_dir, exist_ok=True)
+
+        # Generate all three formats
+        json_path = generate_json_report(report, output_dir)
+        html_path = generate_html_report(report, output_dir)
+        sarif_path = generate_sarif_report(report, output_dir)
+
+        logger.info("=" * 50)
+        logger.info("✔ Scan Complete! Reports generated:")
+        logger.info(f"  📄 {json_path}")
+        logger.info(f"  📄 {html_path}")
+        logger.info(f"  📄 {sarif_path}")
+
+        return output_dir
+
+    def _resolve_upload_dirs(self) -> list[str]:
+        """Resolve upload directories from OJS config or CLI args."""
+        dirs = list(self.upload_dirs)
+
+        if self.ojs_info:
+            if self.ojs_info.files_dir and os.path.isdir(self.ojs_info.files_dir):
+                dirs.append(self.ojs_info.files_dir)
+            if self.ojs_info.public_files_dir and os.path.isdir(self.ojs_info.public_files_dir):
+                dirs.append(self.ojs_info.public_files_dir)
+
+            # Common OJS upload locations
+            public_dir = os.path.join(self.target_path, "public")
+            if os.path.isdir(public_dir) and public_dir not in dirs:
+                dirs.append(public_dir)
+
+        # Deduplicate
+        return list(dict.fromkeys(dirs))
+
+    @staticmethod
+    def _filter_by_severity(findings: list[Finding], min_severity: str) -> list[Finding]:
+        """Filter findings by minimum severity level."""
+        severity_order = {"INFO": 0, "LOW": 1, "MEDIUM": 2, "HIGH": 3, "CRITICAL": 4}
+        min_level = severity_order.get(min_severity.upper(), 0)
+        return [
+            f for f in findings
+            if severity_order.get(f.severity.value, 0) >= min_level
+        ]

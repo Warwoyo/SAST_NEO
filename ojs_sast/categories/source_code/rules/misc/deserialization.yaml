@@ -1,0 +1,68 @@
+rules:
+  - id: "OJS-SC-DESER-001"
+    name: "Insecure deserialization with user input"
+    description: >
+      unserialize() is called with data that may originate from user input,
+      allowing object injection attacks.
+    severity: "CRITICAL"
+    category: "source_code"
+    subcategory: "misc"
+    cwe: "CWE-502"
+    owasp: "A08:2021"
+    taint_analysis:
+      sources:
+        - "$_GET"
+        - "$_POST"
+        - "$_REQUEST"
+        - "$_COOKIE"
+      sinks:
+        - "unserialize"
+      sanitizers: []
+    pattern_match:
+      type: "regex"
+      patterns:
+        - 'unserialize\s*\(\s*\$_(GET|POST|REQUEST|COOKIE)\['
+        - 'unserialize\s*\(\s*\$\w+\s*\)(?!.*?allowed_classes)'
+        - 'unserialize\s*\(\s*(base64_decode|file_get_contents)\s*\('
+    remediation: >
+      Avoid unserialize() with user input. Use json_decode() instead.
+      If unserialize is required, use allowed_classes option:
+      unserialize($data, ['allowed_classes' => false])
+
+  - id: "OJS-SC-DESER-002"
+    name: "YAML parsing with user input"
+    description: >
+      yaml_parse() processes user-controlled data which could lead
+      to code execution through YAML deserialization.
+    severity: "HIGH"
+    category: "source_code"
+    subcategory: "misc"
+    cwe: "CWE-502"
+    owasp: "A08:2021"
+    pattern_match:
+      type: "regex"
+      patterns:
+        - 'yaml_parse\s*\(\s*\$_(GET|POST|REQUEST)'
+        - 'yaml_parse\s*\(\s*\$\w+'
+    remediation: >
+      Avoid yaml_parse() with user input. Use json_decode() or
+      a safe YAML parser with restricted type loading.
+
+  - id: "OJS-SC-DESER-003"
+    name: "PHP object injection via magic methods"
+    description: >
+      Classes with dangerous magic methods (__wakeup, __destruct)
+      combined with unserialize() create object injection risk.
+    severity: "MEDIUM"
+    category: "source_code"
+    subcategory: "misc"
+    cwe: "CWE-502"
+    owasp: "A08:2021"
+    pattern_match:
+      type: "regex"
+      patterns:
+        - 'function\s+__wakeup\s*\(\s*\).*?(exec|system|eval|include|unlink)'
+        - 'function\s+__destruct\s*\(\s*\).*?(exec|system|eval|include|unlink)'
+    remediation: >
+      Review classes with __wakeup() and __destruct() methods.
+      Ensure they do not perform dangerous operations.

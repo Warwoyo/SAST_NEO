@@ -1,0 +1,56 @@
+rules:
+  - id: "OJS-SC-EXPOSURE-001"
+    name: "Hardcoded password in source code"
+    description: >
+      A password or secret key is hardcoded directly in the source code.
+    severity: "HIGH"
+    category: "source_code"
+    subcategory: "exposure"
+    cwe: "CWE-798"
+    owasp: "A02:2021"
+    pattern_match:
+      type: "regex"
+      patterns:
+        - '\$password\s*=\s*["\''][^"\'']{4,}["\'']'
+        - '\$(secret|api_key|apiKey|token|auth)\s*=\s*["\''][^"\'']{8,}["\'']'
+        - '(PASSWORD|SECRET_KEY|API_KEY)\s*[=:]\s*["\''][^"\'']{8,}["\'']'
+    remediation: >
+      Move secrets to environment variables or a configuration file
+      outside the web root. Use getenv() or OJS config.inc.php.
+
+  - id: "OJS-SC-EXPOSURE-002"
+    name: "Hardcoded database credentials"
+    description: >
+      Database connection strings or credentials are hardcoded in PHP files.
+    severity: "CRITICAL"
+    category: "source_code"
+    subcategory: "exposure"
+    cwe: "CWE-798"
+    owasp: "A02:2021"
+    pattern_match:
+      type: "regex"
+      patterns:
+        - '(mysql_connect|mysqli_connect|new\s+PDO)\s*\(\s*["\''][^"\'']+["\'']\s*,\s*["\''][^"\'']+["\'']\s*,\s*["\''][^"\'']+["\'']'
+        - 'DSN\s*=.*?password\s*='
+    remediation: >
+      Use config.inc.php for database credentials in OJS.
+      Never hardcode connection strings.
+
+  - id: "OJS-SC-EXPOSURE-003"
+    name: "AWS/Cloud API keys in source code"
+    description: >
+      Cloud provider API keys or access tokens are present in source code.
+    severity: "CRITICAL"
+    category: "source_code"
+    subcategory: "exposure"
+    cwe: "CWE-798"
+    owasp: "A02:2021"
+    pattern_match:
+      type: "regex"
+      patterns:
+        - 'AKIA[0-9A-Z]{16}'
+        - '(aws_secret|AWS_SECRET)\s*=\s*["\''][^"\'']{20,}["\'']'
+        - 'sk-[a-zA-Z0-9]{32,}'
+    remediation: >
+      Rotate exposed keys immediately. Use IAM roles or environment
+      variables for cloud credentials.

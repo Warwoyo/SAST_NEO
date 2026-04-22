@@ -1,0 +1,57 @@
+rules:
+  - id: "OJS-SC-DEBUG-001"
+    name: "Debug function left in production code"
+    description: >
+      Debug functions (var_dump, print_r, debug_backtrace) are present
+      in production code, potentially leaking sensitive information.
+    severity: "MEDIUM"
+    category: "source_code"
+    subcategory: "exposure"
+    cwe: "CWE-215"
+    owasp: "A05:2021"
+    pattern_match:
+      type: "regex"
+      patterns:
+        - '\bvar_dump\s*\('
+        - '\bprint_r\s*\('
+        - '\bdebug_backtrace\s*\('
+        - '\bdebug_print_backtrace\s*\('
+    remediation: >
+      Remove all debug functions from production code. Use proper
+      logging instead of debug output functions.
+
+  - id: "OJS-SC-DEBUG-002"
+    name: "Error display enabled in code"
+    description: >
+      PHP error display is explicitly enabled in code, which can leak
+      sensitive information including file paths and database details.
+    severity: "MEDIUM"
+    category: "source_code"
+    subcategory: "exposure"
+    cwe: "CWE-209"
+    owasp: "A05:2021"
+    pattern_match:
+      type: "regex"
+      patterns:
+        - 'ini_set\s*\(\s*[''"]display_errors[''"]\s*,\s*[''"]?(1|On|true)'
+        - 'error_reporting\s*\(\s*E_ALL\s*\)'
+    remediation: >
+      Set display_errors = Off in php.ini for production.
+      Use error logging instead of display.
+
+  - id: "OJS-SC-DEBUG-003"
+    name: "phpinfo() exposed"
+    description: >
+      phpinfo() is called in the codebase, potentially exposing
+      server configuration details to attackers.
+    severity: "HIGH"
+    category: "source_code"
+    subcategory: "exposure"
+    cwe: "CWE-200"
+    owasp: "A05:2021"
+    pattern_match:
+      type: "regex"
+      patterns:
+        - '\bphpinfo\s*\(\s*\)'
+    remediation: >
+      Remove phpinfo() calls from production code entirely.

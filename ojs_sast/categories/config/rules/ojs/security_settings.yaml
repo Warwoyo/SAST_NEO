@@ -1,0 +1,58 @@
+checks:
+  - id: "OJS-CFG-SEC-001"
+    name: "Security salt uses default or empty value"
+    description: "The security salt is empty or set to a default value, weakening all cryptographic operations."
+    severity: "CRITICAL"
+    category: "config"
+    subcategory: "ojs"
+    cwe: "CWE-330"
+    owasp: "A02:2021"
+    config_check:
+      field: "security.salt"
+      condition: "empty"
+    remediation: >
+      Set a long, unique, random salt value. Generate with:
+      openssl rand -hex 32
+
+  - id: "OJS-CFG-SEC-002"
+    name: "SSL/HTTPS not enforced"
+    description: "force_ssl is not enabled, allowing insecure HTTP connections."
+    severity: "HIGH"
+    category: "config"
+    subcategory: "ojs"
+    cwe: "CWE-319"
+    owasp: "A02:2021"
+    config_check:
+      field: "security.force_ssl"
+      condition: "not_equals"
+      value: "On"
+    remediation: "Set force_ssl = On in config.inc.php to enforce HTTPS connections."
+
+  - id: "OJS-CFG-SEC-003"
+    name: "Allowed hosts not configured"
+    description: "allowed_hosts is empty or not set, potentially allowing host header attacks."
+    severity: "HIGH"
+    category: "config"
+    subcategory: "ojs"
+    cwe: "CWE-16"
+    owasp: "A05:2021"
+    config_check:
+      field: "security.allowed_hosts"
+      condition: "empty"
+    remediation: >
+      Set allowed_hosts to your domain(s):
+      allowed_hosts = "['yourdomain.com', 'www.yourdomain.com']"
+
+  - id: "OJS-CFG-SEC-004"
+    name: "Path info not disabled"
+    description: "disable_path_info is not set to Off, which may expose internal routing information."
+    severity: "MEDIUM"
+    category: "config"
+    subcategory: "ojs"
+    cwe: "CWE-200"
+    owasp: "A05:2021"
+    config_check:
+      field: "security.disable_path_info"
+      condition: "not_equals"
+      value: "Off"
+    remediation: "Set disable_path_info = Off if not using path-based URLs."

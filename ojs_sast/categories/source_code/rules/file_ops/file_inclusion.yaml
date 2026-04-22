@@ -1,0 +1,69 @@
+rules:
+  - id: "OJS-SC-FI-001"
+    name: "Local File Inclusion via user input"
+    description: >
+      User input is used in include/require statements, allowing
+      an attacker to include arbitrary local files.
+    severity: "CRITICAL"
+    category: "source_code"
+    subcategory: "file_ops"
+    cwe: "CWE-98"
+    owasp: "A03:2021"
+    taint_analysis:
+      sources:
+        - "$_GET"
+        - "$_POST"
+        - "$_REQUEST"
+      sinks:
+        - "include"
+        - "include_once"
+        - "require"
+        - "require_once"
+      sanitizers:
+        - "basename()"
+        - "realpath()"
+    pattern_match:
+      type: "regex"
+      patterns:
+        - '(include|require)(_once)?\s*\(?\s*\$_(GET|POST|REQUEST)\['
+        - '(include|require)(_once)?\s*\(?\s*\$\w+\s*\.\s*\$_(GET|POST|REQUEST)'
+    remediation: >
+      Never use user input in include/require statements.
+      Use a whitelist mapping of allowed includes.
+
+  - id: "OJS-SC-FI-002"
+    name: "Remote File Inclusion"
+    description: >
+      User input is used to construct a URL for include/require,
+      potentially allowing remote code execution.
+    severity: "CRITICAL"
+    category: "source_code"
+    subcategory: "file_ops"
+    cwe: "CWE-98"
+    owasp: "A03:2021"
+    pattern_match:
+      type: "regex"
+      patterns:
+        - '(include|require)(_once)?\s*\(?\s*["\'']https?://'
+        - '(include|require)(_once)?\s*\(?\s*\$\w+.*?(http|ftp|php://)'
+    remediation: >
+      Disable allow_url_include in php.ini. Never include remote files.
+
+  - id: "OJS-SC-FI-003"
+    name: "Dynamic file inclusion in OJS plugin loader"
+    description: >
+      The OJS plugin loading mechanism uses user-controlled input
+      to construct file paths for inclusion.
+    severity: "HIGH"
+    category: "source_code"
+    subcategory: "file_ops"
+    cwe: "CWE-98"
+    owasp: "A03:2021"
+    pattern_match:
+      type: "regex"
+      patterns:
+        - 'import\s*\(\s*\$_(GET|POST|REQUEST)'
+        - 'PluginRegistry.*?loadPlugin.*?\$_(GET|POST|REQUEST)'
+    remediation: >
+      Validate plugin names against registered plugins before loading.
+      Use OJS PluginRegistry with strict validation.

@@ -1,0 +1,75 @@
+rules:
+  - id: "OJS-SC-PT-001"
+    name: "Path traversal in file operations"
+    description: >
+      User input containing path traversal sequences (../) is used
+      in file operations, allowing access to arbitrary files.
+    severity: "HIGH"
+    category: "source_code"
+    subcategory: "file_ops"
+    cwe: "CWE-22"
+    owasp: "A01:2021"
+    taint_analysis:
+      sources:
+        - "$_GET"
+        - "$_POST"
+        - "$_REQUEST"
+        - "Request::getUserVar()"
+      sinks:
+        - "fopen"
+        - "file_get_contents"
+        - "readfile"
+        - "unlink"
+        - "rename"
+        - "copy"
+      sanitizers:
+        - "basename()"
+        - "realpath()"
+    pattern_match:
+      type: "regex"
+      patterns:
+        - '(fopen|file_get_contents|readfile|unlink)\s*\(.*?\$_(GET|POST|REQUEST)\['
+        - '(fopen|file_get_contents)\s*\(.*?\$\w+.*?(?!basename|realpath)'
+    remediation: >
+      Use basename() to strip directory components from user input.
+      Validate with realpath() and check the result is within allowed directories.
+    references:
+      - "https://cwe.mitre.org/data/definitions/22.html"
+
+  - id: "OJS-SC-PT-002"
+    name: "Directory traversal not properly filtered"
+    description: >
+      Path traversal filtering uses simple string replacement which
+      can be bypassed with encoding or double-encoding.
+    severity: "MEDIUM"
+    category: "source_code"
+    subcategory: "file_ops"
+    cwe: "CWE-22"
+    owasp: "A01:2021"
+    pattern_match:
+      type: "regex"
+      patterns:
+        - 'str_replace\s*\(\s*[''"]\.\./?[''"]\s*,\s*[''"][''"]'
+        - 'str_replace\s*\(\s*[''"]\.\.\\[''"]'
+    remediation: >
+      Use realpath() and verify the canonical path starts with the
+      expected base directory, rather than filtering specific patterns.
+
+  - id: "OJS-SC-PT-003"
+    name: "Unsafe file path construction"
+    description: >
+      A file path is constructed by concatenating user input without
+      validation, potentially allowing path traversal.
+    severity: "HIGH"
+    category: "source_code"
+    subcategory: "file_ops"
+    cwe: "CWE-22"
+    owasp: "A01:2021"
+    pattern_match:
+      type: "regex"
+      patterns:
+        - '\$\w+\s*\.\s*["\'']/["\'']?\s*\.\s*\$_(GET|POST|REQUEST)'
+        - 'files_dir.*?\.\s*\$_(GET|POST|REQUEST)'
+    remediation: >
+      Validate user input against a whitelist of allowed filenames.
+      Use basename() and realpath() for path construction.

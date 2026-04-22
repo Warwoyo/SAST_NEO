@@ -1,0 +1,57 @@
+rules:
+  - id: "OJS-SC-IDOR-001"
+    name: "Insecure Direct Object Reference - missing authorization check"
+    description: >
+      Database object is accessed using a user-supplied ID without
+      checking if the current user has permission to access it.
+    severity: "HIGH"
+    category: "source_code"
+    subcategory: "auth"
+    cwe: "CWE-639"
+    owasp: "A01:2021"
+    pattern_match:
+      type: "regex"
+      patterns:
+        - 'getById\s*\(\s*\$_(GET|POST|REQUEST)\['
+        - 'getById\s*\(\s*\$request->getUserVar'
+        - '->load\s*\(\s*\$_(GET|POST|REQUEST)\['
+    remediation: >
+      Always validate that the current user has access rights to the
+      requested resource. Use OJS role-based access control (RBAC).
+
+  - id: "OJS-SC-IDOR-002"
+    name: "Direct file access via user-controlled path"
+    description: >
+      A file is accessed using a path derived from user input without
+      proper authorization checks.
+    severity: "HIGH"
+    category: "source_code"
+    subcategory: "auth"
+    cwe: "CWE-639"
+    owasp: "A01:2021"
+    pattern_match:
+      type: "regex"
+      patterns:
+        - '(fopen|file_get_contents|readfile)\s*\(.*?\$_(GET|POST|REQUEST)\['
+        - 'download.*?\$_(GET|POST|REQUEST)\['
+    remediation: >
+      Implement proper access control checks before serving files.
+      Map file IDs to database records and verify user permissions.
+
+  - id: "OJS-SC-IDOR-003"
+    name: "Missing ownership validation in OJS handler"
+    description: >
+      An OJS page handler processes a resource identified by user input
+      without verifying the requesting user owns or has access to it.
+    severity: "MEDIUM"
+    category: "source_code"
+    subcategory: "auth"
+    cwe: "CWE-639"
+    owasp: "A01:2021"
+    pattern_match:
+      type: "regex"
+      patterns:
+        - 'class\s+\w+Handler.*?getUserVar.*?getById(?!.*?authorize|validate|check)'
+    remediation: >
+      Use OJS authorization policies (AuthorizationPolicy) to enforce
+      access control in all handler methods.

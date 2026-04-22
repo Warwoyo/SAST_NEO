@@ -1,0 +1,1 @@
+"""Source code scanning category."""

@@ -1,0 +1,102 @@
+rules:
+  # CVE-2023-33970: XSS via galley label in OJS < 3.3.0-16
+  - id: "OJS-SC-CVE-001"
+    name: "CVE-2023-33970 - XSS via galley label"
+    description: >
+      OJS versions before 3.3.0-16 are vulnerable to stored XSS
+      through the galley label field. An authenticated user can inject
+      JavaScript via a crafted galley label.
+    severity: "HIGH"
+    category: "source_code"
+    subcategory: "ojs_specific"
+    cwe: "CWE-79"
+    owasp: "A03:2021"
+    cve_references:
+      - "CVE-2023-33970"
+    ojs_versions_affected: "< 3.3.0-16"
+    pattern_match:
+      type: "regex"
+      patterns:
+        - 'galley.*?->getLabel\s*\(\s*\)(?!.*?(htmlspecialchars|escape|strip))'
+        - 'assign.*?galleyLabel.*?->getLabel'
+    remediation: >
+      Update to OJS 3.3.0-16 or later. Apply htmlspecialchars()
+      to galley label output.
+    references:
+      - "https://github.com/pkp/pkp-lib/issues/8866"
+
+  # CVE-2022-24822: RCE via crafted file upload in OJS < 3.3.0-10
+  - id: "OJS-SC-CVE-002"
+    name: "CVE-2022-24822 - RCE via file upload"
+    description: >
+      OJS versions before 3.3.0-10 allow remote code execution
+      through specially crafted file uploads that bypass extension
+      validation in the submission process.
+    severity: "CRITICAL"
+    category: "source_code"
+    subcategory: "ojs_specific"
+    cwe: "CWE-434"
+    owasp: "A04:2021"
+    cve_references:
+      - "CVE-2022-24822"
+    ojs_versions_affected: "< 3.3.0-10"
+    pattern_match:
+      type: "regex"
+      patterns:
+        - 'FileManager.*?uploadFile(?!.*?validateExtension)'
+        - 'move_uploaded_file.*?(?!.*?extension|whitelist)'
+    remediation: >
+      Update to OJS 3.3.0-10 or later. Implement strict file
+      extension whitelisting and magic byte validation.
+    references:
+      - "https://github.com/pkp/pkp-lib/security/advisories/GHSA-7x42-m3q4-qgjm"
+
+  # CVE-2021-27231: Path traversal in OJS < 3.2.1-5
+  - id: "OJS-SC-CVE-003"
+    name: "CVE-2021-27231 - Path traversal"
+    description: >
+      OJS versions before 3.2.1-5 are vulnerable to path traversal
+      allowing unauthenticated access to arbitrary files on the server.
+    severity: "CRITICAL"
+    category: "source_code"
+    subcategory: "ojs_specific"
+    cwe: "CWE-22"
+    owasp: "A01:2021"
+    cve_references:
+      - "CVE-2021-27231"
+    ojs_versions_affected: "< 3.2.1-5"
+    pattern_match:
+      type: "regex"
+      patterns:
+        - '(include|require|fopen|readfile).*?\.\.\/'
+        - 'getFilePath.*?(?!.*?basename|realpath|validate)'
+    remediation: >
+      Update to OJS 3.2.1-5 or later. Validate all file paths
+      with basename() and realpath().
+    references:
+      - "https://cve.mitre.org/cgi-bin/cvename.cgi?name=CVE-2021-27231"
+
+  # CVE-2020-28113: SSRF in OJS < 3.2.0-4
+  - id: "OJS-SC-CVE-004"
+    name: "CVE-2020-28113 - Server-Side Request Forgery"
+    description: >
+      OJS versions before 3.2.0-4 contain SSRF vulnerabilities
+      that allow authenticated users to make requests to internal services.
+    severity: "HIGH"
+    category: "source_code"
+    subcategory: "ojs_specific"
+    cwe: "CWE-918"
+    owasp: "A10:2021"
+    cve_references:
+      - "CVE-2020-28113"
+    ojs_versions_affected: "< 3.2.0-4"
+    pattern_match:
+      type: "regex"
+      patterns:
+        - '(curl_exec|file_get_contents|fopen)\s*\(.*?\$\w+.*?(url|uri|link|href)'
+        - 'Http::request\s*\(.*?\$'
+    remediation: >
+      Update to OJS 3.2.0-4 or later. Validate and whitelist
+      allowed URLs. Block internal/private IP ranges.
+    references:
+      - "https://cve.mitre.org/cgi-bin/cvename.cgi?name=CVE-2020-28113"

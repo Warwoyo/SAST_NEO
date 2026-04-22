@@ -1,0 +1,1 @@
+"""Configuration scanning category."""

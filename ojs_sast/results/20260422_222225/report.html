@@ -1,0 +1,1179 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="OJS-SAST Security Scan Report">
+    <title>OJS-SAST Security Report — 2026-04-22T22:22:25</title>
+    <style>
+        :root {
+            --bg-primary: #0d1117;
+            --bg-secondary: #161b22;
+            --bg-tertiary: #21262d;
+            --border: #30363d;
+            --text-primary: #e6edf3;
+            --text-secondary: #8b949e;
+            --text-muted: #6e7681;
+            --accent-blue: #58a6ff;
+            --accent-purple: #bc8cff;
+            --severity-critical: #f85149;
+            --severity-high: #f0883e;
+            --severity-medium: #d29922;
+            --severity-low: #58a6ff;
+            --severity-info: #8b949e;
+            --success: #3fb950;
+            --radius: 8px;
+            --shadow: 0 2px 8px rgba(0,0,0,0.3);
+        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            line-height: 1.6;
+        }
+        .container { max-width: 1400px; margin: 0 auto; padding: 24px; }
+
+        /* Header */
+        .header {
+            background: linear-gradient(135deg, #1a1e2e 0%, #0d1117 100%);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 32px;
+            margin-bottom: 24px;
+        }
+        .header h1 {
+            font-size: 28px;
+            font-weight: 700;
+            margin-bottom: 8px;
+            background: linear-gradient(90deg, var(--accent-blue), var(--accent-purple));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+        .header-meta { color: var(--text-secondary); font-size: 14px; }
+        .header-meta span { margin-right: 24px; }
+
+        /* Summary Cards */
+        .summary-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 16px;
+            margin-bottom: 24px;
+        }
+        .summary-card {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 20px;
+            text-align: center;
+            transition: transform 0.2s;
+        }
+        .summary-card:hover { transform: translateY(-2px); }
+        .summary-card .count {
+            font-size: 36px;
+            font-weight: 700;
+            line-height: 1.2;
+        }
+        .summary-card .label {
+            font-size: 12px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            color: var(--text-secondary);
+            margin-top: 4px;
+        }
+        .sev-critical .count { color: var(--severity-critical); }
+        .sev-high .count { color: var(--severity-high); }
+        .sev-medium .count { color: var(--severity-medium); }
+        .sev-low .count { color: var(--severity-low); }
+        .sev-info .count { color: var(--severity-info); }
+
+        /* Chart Section */
+        .charts-row {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 16px;
+            margin-bottom: 24px;
+        }
+        .chart-card {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 24px;
+        }
+        .chart-card h3 {
+            font-size: 16px;
+            margin-bottom: 16px;
+            color: var(--text-secondary);
+        }
+        .bar-chart .bar-row {
+            display: flex;
+            align-items: center;
+            margin-bottom: 8px;
+        }
+        .bar-chart .bar-label {
+            width: 90px;
+            font-size: 13px;
+            color: var(--text-secondary);
+        }
+        .bar-chart .bar-track {
+            flex: 1;
+            height: 24px;
+            background: var(--bg-tertiary);
+            border-radius: 4px;
+            overflow: hidden;
+            margin: 0 12px;
+        }
+        .bar-chart .bar-fill {
+            height: 100%;
+            border-radius: 4px;
+            transition: width 0.5s ease;
+        }
+        .bar-chart .bar-value {
+            width: 40px;
+            text-align: right;
+            font-size: 14px;
+            font-weight: 600;
+        }
+
+        /* Filters */
+        .filters {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 16px 24px;
+            margin-bottom: 24px;
+            display: flex;
+            gap: 16px;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+        .filters label {
+            font-size: 13px;
+            color: var(--text-secondary);
+        }
+        .filters select, .filters input {
+            background: var(--bg-tertiary);
+            border: 1px solid var(--border);
+            color: var(--text-primary);
+            padding: 6px 12px;
+            border-radius: 6px;
+            font-size: 13px;
+        }
+        .filters input[type="text"] { width: 250px; }
+        .filter-count {
+            margin-left: auto;
+            font-size: 13px;
+            color: var(--text-muted);
+        }
+
+        /* Findings Table */
+        .findings-table {
+            width: 100%;
+            border-collapse: collapse;
+            background: var(--bg-secondary);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            overflow: hidden;
+        }
+        .findings-table th {
+            background: var(--bg-tertiary);
+            padding: 12px 16px;
+            text-align: left;
+            font-size: 12px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            color: var(--text-secondary);
+            cursor: pointer;
+            user-select: none;
+            border-bottom: 1px solid var(--border);
+        }
+        .findings-table th:hover { color: var(--accent-blue); }
+        .findings-table td {
+            padding: 12px 16px;
+            border-bottom: 1px solid var(--border);
+            font-size: 14px;
+            vertical-align: top;
+        }
+        .findings-table tr:last-child td { border-bottom: none; }
+        .findings-table tr:hover td { background: rgba(88,166,255,0.04); }
+        .findings-table tr { cursor: pointer; }
+
+        /* Severity Badge */
+        .badge {
+            display: inline-block;
+            padding: 2px 10px;
+            border-radius: 12px;
+            font-size: 11px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        .badge-CRITICAL { background: rgba(248,81,73,0.15); color: var(--severity-critical); border: 1px solid rgba(248,81,73,0.3); }
+        .badge-HIGH { background: rgba(240,136,62,0.15); color: var(--severity-high); border: 1px solid rgba(240,136,62,0.3); }
+        .badge-MEDIUM { background: rgba(210,153,34,0.15); color: var(--severity-medium); border: 1px solid rgba(210,153,34,0.3); }
+        .badge-LOW { background: rgba(88,166,255,0.15); color: var(--severity-low); border: 1px solid rgba(88,166,255,0.3); }
+        .badge-INFO { background: rgba(139,148,158,0.15); color: var(--severity-info); border: 1px solid rgba(139,148,158,0.3); }
+
+        /* Finding Detail Modal */
+        .modal-overlay {
+            display: none;
+            position: fixed;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(0,0,0,0.7);
+            z-index: 100;
+            overflow-y: auto;
+            padding: 40px 20px;
+        }
+        .modal-overlay.active { display: flex; justify-content: center; align-items: flex-start; }
+        .modal {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            max-width: 900px;
+            width: 100%;
+            padding: 32px;
+            box-shadow: 0 16px 48px rgba(0,0,0,0.4);
+        }
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            margin-bottom: 24px;
+        }
+        .modal-header h2 { font-size: 20px; }
+        .modal-close {
+            background: none;
+            border: none;
+            color: var(--text-secondary);
+            font-size: 24px;
+            cursor: pointer;
+            padding: 4px 8px;
+        }
+        .modal-close:hover { color: var(--text-primary); }
+        .detail-section {
+            margin-bottom: 20px;
+        }
+        .detail-section h4 {
+            font-size: 13px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            color: var(--accent-blue);
+            margin-bottom: 8px;
+        }
+        .detail-section p, .detail-section pre {
+            color: var(--text-secondary);
+            font-size: 14px;
+        }
+        .code-block {
+            background: var(--bg-primary);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            padding: 16px;
+            overflow-x: auto;
+            font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+            font-size: 13px;
+            line-height: 1.5;
+            white-space: pre;
+            color: var(--text-primary);
+        }
+        .taint-path {
+            background: var(--bg-primary);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            padding: 16px;
+        }
+        .taint-step {
+            display: flex;
+            align-items: center;
+            padding: 6px 0;
+            font-size: 13px;
+            font-family: monospace;
+        }
+        .taint-step::before {
+            content: '→';
+            color: var(--severity-high);
+            margin-right: 8px;
+            font-weight: bold;
+        }
+        .taint-step:first-child::before {
+            content: '●';
+            color: var(--success);
+        }
+        .taint-step:last-child::before {
+            content: '◆';
+            color: var(--severity-critical);
+        }
+        .meta-tags { display: flex; gap: 8px; flex-wrap: wrap; }
+        .meta-tag {
+            background: var(--bg-tertiary);
+            border: 1px solid var(--border);
+            padding: 2px 10px;
+            border-radius: 4px;
+            font-size: 12px;
+            color: var(--text-secondary);
+        }
+
+        /* Footer */
+        .footer {
+            text-align: center;
+            padding: 24px;
+            color: var(--text-muted);
+            font-size: 13px;
+            border-top: 1px solid var(--border);
+            margin-top: 32px;
+        }
+
+        @media (max-width: 768px) {
+            .charts-row { grid-template-columns: 1fr; }
+            .filters { flex-direction: column; align-items: stretch; }
+            .filters input[type="text"] { width: 100%; }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <div class="header">
+            <h1>🔒 OJS-SAST Security Report</h1>
+            <div class="header-meta">
+                <span>📅 2026-04-22T22:22:25</span>
+                <span>📂 /home/wiyu/Documents/01. Skripsi/code/SAST_NEO/tests/fixtures/php_vulnerable</span>
+                
+                <span>⏱️ 0.1s</span>
+                <span>📄 2 files</span>
+                <span>📏 94 rules</span>
+            </div>
+        </div>
+
+        <!-- Summary Cards -->
+        <div class="summary-grid">
+            <div class="summary-card sev-critical">
+                <div class="count">12</div>
+                <div class="label">Critical</div>
+            </div>
+            <div class="summary-card sev-high">
+                <div class="count">24</div>
+                <div class="label">High</div>
+            </div>
+            <div class="summary-card sev-medium">
+                <div class="count">3</div>
+                <div class="label">Medium</div>
+            </div>
+            <div class="summary-card sev-low">
+                <div class="count">0</div>
+                <div class="label">Low</div>
+            </div>
+            <div class="summary-card sev-info">
+                <div class="count">0</div>
+                <div class="label">Info</div>
+            </div>
+        </div>
+
+        <!-- Charts -->
+        <div class="charts-row">
+            <div class="chart-card">
+                <h3>Findings by Severity</h3>
+                <div class="bar-chart">
+                    
+                    
+                    <div class="bar-row">
+                        <span class="bar-label">CRITICAL</span>
+                        <div class="bar-track">
+                            <div class="bar-fill" style="width: 30.8%; background: #f85149;"></div>
+                        </div>
+                        <span class="bar-value" style="color: #f85149;">12</span>
+                    </div>
+                    
+                    <div class="bar-row">
+                        <span class="bar-label">HIGH</span>
+                        <div class="bar-track">
+                            <div class="bar-fill" style="width: 61.5%; background: #f0883e;"></div>
+                        </div>
+                        <span class="bar-value" style="color: #f0883e;">24</span>
+                    </div>
+                    
+                    <div class="bar-row">
+                        <span class="bar-label">MEDIUM</span>
+                        <div class="bar-track">
+                            <div class="bar-fill" style="width: 7.7%; background: #d29922;"></div>
+                        </div>
+                        <span class="bar-value" style="color: #d29922;">3</span>
+                    </div>
+                    
+                    <div class="bar-row">
+                        <span class="bar-label">LOW</span>
+                        <div class="bar-track">
+                            <div class="bar-fill" style="width: 0.0%; background: #58a6ff;"></div>
+                        </div>
+                        <span class="bar-value" style="color: #58a6ff;">0</span>
+                    </div>
+                    
+                    <div class="bar-row">
+                        <span class="bar-label">INFO</span>
+                        <div class="bar-track">
+                            <div class="bar-fill" style="width: 0.0%; background: #8b949e;"></div>
+                        </div>
+                        <span class="bar-value" style="color: #8b949e;">0</span>
+                    </div>
+                    
+                </div>
+            </div>
+            <div class="chart-card">
+                <h3>Findings by Category</h3>
+                <div class="bar-chart">
+                    
+                    <div class="bar-row">
+                        <span class="bar-label">source_code</span>
+                        <div class="bar-track">
+                            <div class="bar-fill" style="width: 100.0%; background: var(--accent-blue);"></div>
+                        </div>
+                        <span class="bar-value">39</span>
+                    </div>
+                    
+                </div>
+            </div>
+        </div>
+
+        <!-- Filters -->
+        <div class="filters">
+            <div>
+                <label>Severity</label><br>
+                <select id="filterSeverity" onchange="filterFindings()">
+                    <option value="all">All Severities</option>
+                    <option value="CRITICAL">Critical</option>
+                    <option value="HIGH">High</option>
+                    <option value="MEDIUM">Medium</option>
+                    <option value="LOW">Low</option>
+                    <option value="INFO">Info</option>
+                </select>
+            </div>
+            <div>
+                <label>Category</label><br>
+                <select id="filterCategory" onchange="filterFindings()">
+                    <option value="all">All Categories</option>
+                    <option value="source_code">Source Code</option>
+                    <option value="config">Configuration</option>
+                    <option value="uploaded_file">Uploaded File</option>
+                </select>
+            </div>
+            <div>
+                <label>Search</label><br>
+                <input type="text" id="filterSearch" placeholder="Search findings..." oninput="filterFindings()">
+            </div>
+            <span class="filter-count" id="filterCount">Showing 39 of 39 findings</span>
+        </div>
+
+        <!-- Findings Table -->
+        <table class="findings-table" id="findingsTable">
+            <thead>
+                <tr>
+                    <th onclick="sortTable(0)">Severity ⇅</th>
+                    <th onclick="sortTable(1)">Rule ID ⇅</th>
+                    <th onclick="sortTable(2)">Name ⇅</th>
+                    <th onclick="sortTable(3)">Category ⇅</th>
+                    <th onclick="sortTable(4)">File ⇅</th>
+                    <th>Line</th>
+                    <th>CWE</th>
+                </tr>
+            </thead>
+            <tbody>
+                
+                <tr class="finding-row"
+                    data-severity="CRITICAL"
+                    data-category="source_code"
+                    data-index="0"
+                    onclick="showDetail(0)">
+                    <td><span class="badge badge-CRITICAL">CRITICAL</span></td>
+                    <td style="font-family: monospace; font-size: 12px;">OJS-SC-SQLINJECTION-TAINT</td>
+                    <td>SQL Injection via tainted input</td>
+                    <td>source_code</td>
+                    <td style="font-size: 12px; max-width: 250px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="/home/wiyu/Documents/01. Skripsi/code/SAST_NEO/tests/fixtures/php_vulnerable/vulnerable.php">vulnerable.php</td>
+                    <td>3</td>
+                    <td><span class="meta-tag">CWE-89</span></td>
+                </tr>
+                
+                <tr class="finding-row"
+                    data-severity="CRITICAL"
+                    data-category="source_code"
+                    data-index="1"
+                    onclick="showDetail(1)">
+                    <td><span class="badge badge-CRITICAL">CRITICAL</span></td>
+                    <td style="font-family: monospace; font-size: 12px;">OJS-SC-RCE-TAINT</td>
+                    <td>Remote Code Execution via tainted input</td>
+                    <td>source_code</td>
+                    <td style="font-size: 12px; max-width: 250px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="/home/wiyu/Documents/01. Skripsi/code/SAST_NEO/tests/fixtures/php_vulnerable/vulnerable.php">vulnerable.php</td>
+                    <td>11</td>
+                    <td><span class="meta-tag">CWE-78</span></td>
+                </tr>
+                
+                <tr class="finding-row"
+                    data-severity="CRITICAL"
+                    data-category="source_code"
+                    data-index="2"
+                    onclick="showDetail(2)">
+                    <td><span class="badge badge-CRITICAL">CRITICAL</span></td>
+                    <td style="font-family: monospace; font-size: 12px;">OJS-SC-RCE-TAINT</td>
+                    <td>Remote Code Execution via tainted input</td>
+                    <td>source_code</td>
+                    <td style="font-size: 12px; max-width: 250px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="/home/wiyu/Documents/01. Skripsi/code/SAST_NEO/tests/fixtures/php_vulnerable/vulnerable.php">vulnerable.php</td>
+                    <td>15</td>
+                    <td><span class="meta-tag">CWE-78</span></td>
+                </tr>
+                
+                <tr class="finding-row"
+                    data-severity="HIGH"
+                    data-category="source_code"
+                    data-index="3"
+                    onclick="showDetail(3)">
+                    <td><span class="badge badge-HIGH">HIGH</span></td>
+                    <td style="font-family: monospace; font-size: 12px;">OJS-SC-DESERIALIZATION-TAINT</td>
+                    <td>Insecure Deserialization via tainted input</td>
+                    <td>source_code</td>
+                    <td style="font-size: 12px; max-width: 250px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="/home/wiyu/Documents/01. Skripsi/code/SAST_NEO/tests/fixtures/php_vulnerable/vulnerable.php">vulnerable.php</td>
+                    <td>23</td>
+                    <td><span class="meta-tag">CWE-502</span></td>
+                </tr>
+                
+                <tr class="finding-row"
+                    data-severity="HIGH"
+                    data-category="source_code"
+                    data-index="4"
+                    onclick="showDetail(4)">
+                    <td><span class="badge badge-HIGH">HIGH</span></td>
+                    <td style="font-family: monospace; font-size: 12px;">OJS-SC-SSRF-TAINT</td>
+                    <td>Server-Side Request Forgery via tainted input</td>
+                    <td>source_code</td>
+                    <td style="font-size: 12px; max-width: 250px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="/home/wiyu/Documents/01. Skripsi/code/SAST_NEO/tests/fixtures/php_vulnerable/vulnerable.php">vulnerable.php</td>
+                    <td>27</td>
+                    <td><span class="meta-tag">CWE-918</span></td>
+                </tr>
+                
+                <tr class="finding-row"
+                    data-severity="HIGH"
+                    data-category="source_code"
+                    data-index="5"
+                    onclick="showDetail(5)">
+                    <td><span class="badge badge-HIGH">HIGH</span></td>
+                    <td style="font-family: monospace; font-size: 12px;">OJS-SC-XSS-TAINT</td>
+                    <td>Cross-Site Scripting (XSS) via tainted input</td>
+                    <td>source_code</td>
+                    <td style="font-size: 12px; max-width: 250px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="/home/wiyu/Documents/01. Skripsi/code/SAST_NEO/tests/fixtures/php_vulnerable/vulnerable.php">vulnerable.php</td>
+                    <td>7</td>
+                    <td><span class="meta-tag">CWE-79</span></td>
+                </tr>
+                
+                <tr class="finding-row"
+                    data-severity="CRITICAL"
+                    data-category="source_code"
+                    data-index="6"
+                    onclick="showDetail(6)">
+                    <td><span class="badge badge-CRITICAL">CRITICAL</span></td>
+                    <td style="font-family: monospace; font-size: 12px;">OJS-SC-RCE-001</td>
+                    <td>Remote Code Execution via eval with user input</td>
+                    <td>source_code</td>
+                    <td style="font-size: 12px; max-width: 250px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="/home/wiyu/Documents/01. Skripsi/code/SAST_NEO/tests/fixtures/php_vulnerable/vulnerable.php">vulnerable.php</td>
+                    <td>16</td>
+                    <td><span class="meta-tag">CWE-94</span></td>
+                </tr>
+                
+                <tr class="finding-row"
+                    data-severity="CRITICAL"
+                    data-category="source_code"
+                    data-index="7"
+                    onclick="showDetail(7)">
+                    <td><span class="badge badge-CRITICAL">CRITICAL</span></td>
+                    <td style="font-family: monospace; font-size: 12px;">OJS-SC-RCE-002</td>
+                    <td>Command Injection via shell execution functions</td>
+                    <td>source_code</td>
+                    <td style="font-size: 12px; max-width: 250px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="/home/wiyu/Documents/01. Skripsi/code/SAST_NEO/tests/fixtures/php_vulnerable/vulnerable.php">vulnerable.php</td>
+                    <td>12</td>
+                    <td><span class="meta-tag">CWE-78</span></td>
+                </tr>
+                
+                <tr class="finding-row"
+                    data-severity="CRITICAL"
+                    data-category="source_code"
+                    data-index="8"
+                    onclick="showDetail(8)">
+                    <td><span class="badge badge-CRITICAL">CRITICAL</span></td>
+                    <td style="font-family: monospace; font-size: 12px;">OJS-SC-RCE-003</td>
+                    <td>Code execution via preg_replace with /e modifier</td>
+                    <td>source_code</td>
+                    <td style="font-size: 12px; max-width: 250px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="/home/wiyu/Documents/01. Skripsi/code/SAST_NEO/tests/fixtures/php_vulnerable/vulnerable.php">vulnerable.php</td>
+                    <td>47</td>
+                    <td><span class="meta-tag">CWE-94</span></td>
+                </tr>
+                
+                <tr class="finding-row"
+                    data-severity="CRITICAL"
+                    data-category="source_code"
+                    data-index="9"
+                    onclick="showDetail(9)">
+                    <td><span class="badge badge-CRITICAL">CRITICAL</span></td>
+                    <td style="font-family: monospace; font-size: 12px;">OJS-SC-RCE-003</td>
+                    <td>Code execution via preg_replace with /e modifier</td>
+                    <td>source_code</td>
+                    <td style="font-size: 12px; max-width: 250px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="/home/wiyu/Documents/01. Skripsi/code/SAST_NEO/tests/fixtures/php_vulnerable/vulnerable.php">vulnerable.php</td>
+                    <td>47</td>
+                    <td><span class="meta-tag">CWE-94</span></td>
+                </tr>
+                
+                <tr class="finding-row"
+                    data-severity="HIGH"
+                    data-category="source_code"
+                    data-index="10"
+                    onclick="showDetail(10)">
+                    <td><span class="badge badge-HIGH">HIGH</span></td>
+                    <td style="font-family: monospace; font-size: 12px;">OJS-SC-SQLI-002</td>
+                    <td>SQL Injection via string concatenation in query</td>
+                    <td>source_code</td>
+                    <td style="font-size: 12px; max-width: 250px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="/home/wiyu/Documents/01. Skripsi/code/SAST_NEO/tests/fixtures/php_vulnerable/vulnerable.php">vulnerable.php</td>
+                    <td>4</td>
+                    <td><span class="meta-tag">CWE-89</span></td>
+                </tr>
+                
+                <tr class="finding-row"
+                    data-severity="CRITICAL"
+                    data-category="source_code"
+                    data-index="11"
+                    onclick="showDetail(11)">
+                    <td><span class="badge badge-CRITICAL">CRITICAL</span></td>
+                    <td style="font-family: monospace; font-size: 12px;">OJS-SC-SQLI-003</td>
+                    <td>SQL Injection in OJS DAO retrieve method</td>
+                    <td>source_code</td>
+                    <td style="font-size: 12px; max-width: 250px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="/home/wiyu/Documents/01. Skripsi/code/SAST_NEO/tests/fixtures/php_vulnerable/vulnerable.php">vulnerable.php</td>
+                    <td>4</td>
+                    <td><span class="meta-tag">CWE-89</span></td>
+                </tr>
+                
+                <tr class="finding-row"
+                    data-severity="HIGH"
+                    data-category="source_code"
+                    data-index="12"
+                    onclick="showDetail(12)">
+                    <td><span class="badge badge-HIGH">HIGH</span></td>
+                    <td style="font-family: monospace; font-size: 12px;">OJS-SC-XSS-001</td>
+                    <td>Reflected XSS via direct output of user input</td>
+                    <td>source_code</td>
+                    <td style="font-size: 12px; max-width: 250px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="/home/wiyu/Documents/01. Skripsi/code/SAST_NEO/tests/fixtures/php_vulnerable/vulnerable.php">vulnerable.php</td>
+                    <td>3</td>
+                    <td><span class="meta-tag">CWE-79</span></td>
+                </tr>
+                
+                <tr class="finding-row"
+                    data-severity="HIGH"
+                    data-category="source_code"
+                    data-index="13"
+                    onclick="showDetail(13)">
+                    <td><span class="badge badge-HIGH">HIGH</span></td>
+                    <td style="font-family: monospace; font-size: 12px;">OJS-SC-XSS-001</td>
+                    <td>Reflected XSS via direct output of user input</td>
+                    <td>source_code</td>
+                    <td style="font-size: 12px; max-width: 250px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="/home/wiyu/Documents/01. Skripsi/code/SAST_NEO/tests/fixtures/php_vulnerable/vulnerable.php">vulnerable.php</td>
+                    <td>7</td>
+                    <td><span class="meta-tag">CWE-79</span></td>
+                </tr>
+                
+                <tr class="finding-row"
+                    data-severity="HIGH"
+                    data-category="source_code"
+                    data-index="14"
+                    onclick="showDetail(14)">
+                    <td><span class="badge badge-HIGH">HIGH</span></td>
+                    <td style="font-family: monospace; font-size: 12px;">OJS-SC-XSS-001</td>
+                    <td>Reflected XSS via direct output of user input</td>
+                    <td>source_code</td>
+                    <td style="font-size: 12px; max-width: 250px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="/home/wiyu/Documents/01. Skripsi/code/SAST_NEO/tests/fixtures/php_vulnerable/vulnerable.php">vulnerable.php</td>
+                    <td>11</td>
+                    <td><span class="meta-tag">CWE-79</span></td>
+                </tr>
+                
+                <tr class="finding-row"
+                    data-severity="HIGH"
+                    data-category="source_code"
+                    data-index="15"
+                    onclick="showDetail(15)">
+                    <td><span class="badge badge-HIGH">HIGH</span></td>
+                    <td style="font-family: monospace; font-size: 12px;">OJS-SC-XSS-001</td>
+                    <td>Reflected XSS via direct output of user input</td>
+                    <td>source_code</td>
+                    <td style="font-size: 12px; max-width: 250px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="/home/wiyu/Documents/01. Skripsi/code/SAST_NEO/tests/fixtures/php_vulnerable/vulnerable.php">vulnerable.php</td>
+                    <td>15</td>
+                    <td><span class="meta-tag">CWE-79</span></td>
+                </tr>
+                
+                <tr class="finding-row"
+                    data-severity="HIGH"
+                    data-category="source_code"
+                    data-index="16"
+                    onclick="showDetail(16)">
+                    <td><span class="badge badge-HIGH">HIGH</span></td>
+                    <td style="font-family: monospace; font-size: 12px;">OJS-SC-XSS-001</td>
+                    <td>Reflected XSS via direct output of user input</td>
+                    <td>source_code</td>
+                    <td style="font-size: 12px; max-width: 250px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="/home/wiyu/Documents/01. Skripsi/code/SAST_NEO/tests/fixtures/php_vulnerable/vulnerable.php">vulnerable.php</td>
+                    <td>19</td>
+                    <td><span class="meta-tag">CWE-79</span></td>
+                </tr>
+                
+                <tr class="finding-row"
+                    data-severity="HIGH"
+                    data-category="source_code"
+                    data-index="17"
+                    onclick="showDetail(17)">
+                    <td><span class="badge badge-HIGH">HIGH</span></td>
+                    <td style="font-family: monospace; font-size: 12px;">OJS-SC-XSS-001</td>
+                    <td>Reflected XSS via direct output of user input</td>
+                    <td>source_code</td>
+                    <td style="font-size: 12px; max-width: 250px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="/home/wiyu/Documents/01. Skripsi/code/SAST_NEO/tests/fixtures/php_vulnerable/vulnerable.php">vulnerable.php</td>
+                    <td>27</td>
+                    <td><span class="meta-tag">CWE-79</span></td>
+                </tr>
+                
+                <tr class="finding-row"
+                    data-severity="HIGH"
+                    data-category="source_code"
+                    data-index="18"
+                    onclick="showDetail(18)">
+                    <td><span class="badge badge-HIGH">HIGH</span></td>
+                    <td style="font-family: monospace; font-size: 12px;">OJS-SC-XSS-001</td>
+                    <td>Reflected XSS via direct output of user input</td>
+                    <td>source_code</td>
+                    <td style="font-size: 12px; max-width: 250px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="/home/wiyu/Documents/01. Skripsi/code/SAST_NEO/tests/fixtures/php_vulnerable/vulnerable.php">vulnerable.php</td>
+                    <td>31</td>
+                    <td><span class="meta-tag">CWE-79</span></td>
+                </tr>
+                
+                <tr class="finding-row"
+                    data-severity="CRITICAL"
+                    data-category="source_code"
+                    data-index="19"
+                    onclick="showDetail(19)">
+                    <td><span class="badge badge-CRITICAL">CRITICAL</span></td>
+                    <td style="font-family: monospace; font-size: 12px;">OJS-SC-DESER-001</td>
+                    <td>Insecure deserialization with user input</td>
+                    <td>source_code</td>
+                    <td style="font-size: 12px; max-width: 250px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="/home/wiyu/Documents/01. Skripsi/code/SAST_NEO/tests/fixtures/php_vulnerable/vulnerable.php">vulnerable.php</td>
+                    <td>24</td>
+                    <td><span class="meta-tag">CWE-502</span></td>
+                </tr>
+                
+                <tr class="finding-row"
+                    data-severity="MEDIUM"
+                    data-category="source_code"
+                    data-index="20"
+                    onclick="showDetail(20)">
+                    <td><span class="badge badge-MEDIUM">MEDIUM</span></td>
+                    <td style="font-family: monospace; font-size: 12px;">OJS-SC-DEBUG-001</td>
+                    <td>Debug function left in production code</td>
+                    <td>source_code</td>
+                    <td style="font-size: 12px; max-width: 250px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="/home/wiyu/Documents/01. Skripsi/code/SAST_NEO/tests/fixtures/php_vulnerable/vulnerable.php">vulnerable.php</td>
+                    <td>41</td>
+                    <td><span class="meta-tag">CWE-215</span></td>
+                </tr>
+                
+                <tr class="finding-row"
+                    data-severity="HIGH"
+                    data-category="source_code"
+                    data-index="21"
+                    onclick="showDetail(21)">
+                    <td><span class="badge badge-HIGH">HIGH</span></td>
+                    <td style="font-family: monospace; font-size: 12px;">OJS-SC-DEBUG-003</td>
+                    <td>phpinfo() exposed</td>
+                    <td>source_code</td>
+                    <td style="font-size: 12px; max-width: 250px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="/home/wiyu/Documents/01. Skripsi/code/SAST_NEO/tests/fixtures/php_vulnerable/vulnerable.php">vulnerable.php</td>
+                    <td>44</td>
+                    <td><span class="meta-tag">CWE-200</span></td>
+                </tr>
+                
+                <tr class="finding-row"
+                    data-severity="HIGH"
+                    data-category="source_code"
+                    data-index="22"
+                    onclick="showDetail(22)">
+                    <td><span class="badge badge-HIGH">HIGH</span></td>
+                    <td style="font-family: monospace; font-size: 12px;">OJS-SC-PT-001</td>
+                    <td>Path traversal in file operations</td>
+                    <td>source_code</td>
+                    <td style="font-size: 12px; max-width: 250px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="/home/wiyu/Documents/01. Skripsi/code/SAST_NEO/tests/fixtures/php_vulnerable/vulnerable.php">vulnerable.php</td>
+                    <td>28</td>
+                    <td><span class="meta-tag">CWE-22</span></td>
+                </tr>
+                
+                <tr class="finding-row"
+                    data-severity="HIGH"
+                    data-category="source_code"
+                    data-index="23"
+                    onclick="showDetail(23)">
+                    <td><span class="badge badge-HIGH">HIGH</span></td>
+                    <td style="font-family: monospace; font-size: 12px;">OJS-SC-HASH-001</td>
+                    <td>Weak hash algorithm for password storage</td>
+                    <td>source_code</td>
+                    <td style="font-size: 12px; max-width: 250px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="/home/wiyu/Documents/01. Skripsi/code/SAST_NEO/tests/fixtures/php_vulnerable/vulnerable.php">vulnerable.php</td>
+                    <td>32</td>
+                    <td><span class="meta-tag">CWE-328</span></td>
+                </tr>
+                
+                <tr class="finding-row"
+                    data-severity="MEDIUM"
+                    data-category="source_code"
+                    data-index="24"
+                    onclick="showDetail(24)">
+                    <td><span class="badge badge-MEDIUM">MEDIUM</span></td>
+                    <td style="font-family: monospace; font-size: 12px;">OJS-SC-HASH-002</td>
+                    <td>MD5 used for security-sensitive operation</td>
+                    <td>source_code</td>
+                    <td style="font-size: 12px; max-width: 250px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="/home/wiyu/Documents/01. Skripsi/code/SAST_NEO/tests/fixtures/php_vulnerable/vulnerable.php">vulnerable.php</td>
+                    <td>35</td>
+                    <td><span class="meta-tag">CWE-328</span></td>
+                </tr>
+                
+                <tr class="finding-row"
+                    data-severity="MEDIUM"
+                    data-category="source_code"
+                    data-index="25"
+                    onclick="showDetail(25)">
+                    <td><span class="badge badge-MEDIUM">MEDIUM</span></td>
+                    <td style="font-family: monospace; font-size: 12px;">OJS-SC-HASH-003</td>
+                    <td>Unsalted hash usage</td>
+                    <td>source_code</td>
+                    <td style="font-size: 12px; max-width: 250px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="/home/wiyu/Documents/01. Skripsi/code/SAST_NEO/tests/fixtures/php_vulnerable/vulnerable.php">vulnerable.php</td>
+                    <td>32</td>
+                    <td><span class="meta-tag">CWE-916</span></td>
+                </tr>
+                
+                <tr class="finding-row"
+                    data-severity="HIGH"
+                    data-category="source_code"
+                    data-index="26"
+                    onclick="showDetail(26)">
+                    <td><span class="badge badge-HIGH">HIGH</span></td>
+                    <td style="font-family: monospace; font-size: 12px;">OJS-SC-RAND-001</td>
+                    <td>Insecure randomness for security tokens</td>
+                    <td>source_code</td>
+                    <td style="font-size: 12px; max-width: 250px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="/home/wiyu/Documents/01. Skripsi/code/SAST_NEO/tests/fixtures/php_vulnerable/vulnerable.php">vulnerable.php</td>
+                    <td>35</td>
+                    <td><span class="meta-tag">CWE-330</span></td>
+                </tr>
+                
+                <tr class="finding-row"
+                    data-severity="HIGH"
+                    data-category="source_code"
+                    data-index="27"
+                    onclick="showDetail(27)">
+                    <td><span class="badge badge-HIGH">HIGH</span></td>
+                    <td style="font-family: monospace; font-size: 12px;">OJS-SC-AUTH-002</td>
+                    <td>Weak token generation for password reset</td>
+                    <td>source_code</td>
+                    <td style="font-size: 12px; max-width: 250px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="/home/wiyu/Documents/01. Skripsi/code/SAST_NEO/tests/fixtures/php_vulnerable/vulnerable.php">vulnerable.php</td>
+                    <td>35</td>
+                    <td><span class="meta-tag">CWE-330</span></td>
+                </tr>
+                
+                <tr class="finding-row"
+                    data-severity="CRITICAL"
+                    data-category="source_code"
+                    data-index="28"
+                    onclick="showDetail(28)">
+                    <td><span class="badge badge-CRITICAL">CRITICAL</span></td>
+                    <td style="font-family: monospace; font-size: 12px;">OJS-SC-AUTH-003</td>
+                    <td>Hardcoded authentication credentials</td>
+                    <td>source_code</td>
+                    <td style="font-size: 12px; max-width: 250px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="/home/wiyu/Documents/01. Skripsi/code/SAST_NEO/tests/fixtures/php_vulnerable/vulnerable.php">vulnerable.php</td>
+                    <td>38</td>
+                    <td><span class="meta-tag">CWE-798</span></td>
+                </tr>
+                
+                <tr class="finding-row"
+                    data-severity="HIGH"
+                    data-category="source_code"
+                    data-index="29"
+                    onclick="showDetail(29)">
+                    <td><span class="badge badge-HIGH">HIGH</span></td>
+                    <td style="font-family: monospace; font-size: 12px;">OJS-SC-CSRF-001</td>
+                    <td>Form submission without CSRF token validation</td>
+                    <td>source_code</td>
+                    <td style="font-size: 12px; max-width: 250px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="/home/wiyu/Documents/01. Skripsi/code/SAST_NEO/tests/fixtures/php_vulnerable/vulnerable.php">vulnerable.php</td>
+                    <td>7</td>
+                    <td><span class="meta-tag">CWE-352</span></td>
+                </tr>
+                
+                <tr class="finding-row"
+                    data-severity="HIGH"
+                    data-category="source_code"
+                    data-index="30"
+                    onclick="showDetail(30)">
+                    <td><span class="badge badge-HIGH">HIGH</span></td>
+                    <td style="font-family: monospace; font-size: 12px;">OJS-SC-CSRF-001</td>
+                    <td>Form submission without CSRF token validation</td>
+                    <td>source_code</td>
+                    <td style="font-size: 12px; max-width: 250px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="/home/wiyu/Documents/01. Skripsi/code/SAST_NEO/tests/fixtures/php_vulnerable/vulnerable.php">vulnerable.php</td>
+                    <td>31</td>
+                    <td><span class="meta-tag">CWE-352</span></td>
+                </tr>
+                
+                <tr class="finding-row"
+                    data-severity="HIGH"
+                    data-category="source_code"
+                    data-index="31"
+                    onclick="showDetail(31)">
+                    <td><span class="badge badge-HIGH">HIGH</span></td>
+                    <td style="font-family: monospace; font-size: 12px;">OJS-SC-CSRF-001</td>
+                    <td>Form submission without CSRF token validation</td>
+                    <td>source_code</td>
+                    <td style="font-size: 12px; max-width: 250px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="/home/wiyu/Documents/01. Skripsi/code/SAST_NEO/tests/fixtures/php_vulnerable/vulnerable.php">vulnerable.php</td>
+                    <td>47</td>
+                    <td><span class="meta-tag">CWE-352</span></td>
+                </tr>
+                
+                <tr class="finding-row"
+                    data-severity="CRITICAL"
+                    data-category="source_code"
+                    data-index="32"
+                    onclick="showDetail(32)">
+                    <td><span class="badge badge-CRITICAL">CRITICAL</span></td>
+                    <td style="font-family: monospace; font-size: 12px;">OJS-SC-SQLINJECTION-TAINT</td>
+                    <td>SQL Injection via tainted input</td>
+                    <td>source_code</td>
+                    <td style="font-size: 12px; max-width: 250px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="/home/wiyu/Documents/01. Skripsi/code/SAST_NEO/tests/fixtures/php_vulnerable/ojs_vulnerable.php">ojs_vulnerable.php</td>
+                    <td>3</td>
+                    <td><span class="meta-tag">CWE-89</span></td>
+                </tr>
+                
+                <tr class="finding-row"
+                    data-severity="HIGH"
+                    data-category="source_code"
+                    data-index="33"
+                    onclick="showDetail(33)">
+                    <td><span class="badge badge-HIGH">HIGH</span></td>
+                    <td style="font-family: monospace; font-size: 12px;">OJS-SC-XSS-TAINT</td>
+                    <td>Cross-Site Scripting (XSS) via tainted input</td>
+                    <td>source_code</td>
+                    <td style="font-size: 12px; max-width: 250px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="/home/wiyu/Documents/01. Skripsi/code/SAST_NEO/tests/fixtures/php_vulnerable/ojs_vulnerable.php">ojs_vulnerable.php</td>
+                    <td>7</td>
+                    <td><span class="meta-tag">CWE-79</span></td>
+                </tr>
+                
+                <tr class="finding-row"
+                    data-severity="HIGH"
+                    data-category="source_code"
+                    data-index="34"
+                    onclick="showDetail(34)">
+                    <td><span class="badge badge-HIGH">HIGH</span></td>
+                    <td style="font-family: monospace; font-size: 12px;">OJS-SC-SQLI-002</td>
+                    <td>SQL Injection via string concatenation in query</td>
+                    <td>source_code</td>
+                    <td style="font-size: 12px; max-width: 250px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="/home/wiyu/Documents/01. Skripsi/code/SAST_NEO/tests/fixtures/php_vulnerable/ojs_vulnerable.php">ojs_vulnerable.php</td>
+                    <td>4</td>
+                    <td><span class="meta-tag">CWE-89</span></td>
+                </tr>
+                
+                <tr class="finding-row"
+                    data-severity="CRITICAL"
+                    data-category="source_code"
+                    data-index="35"
+                    onclick="showDetail(35)">
+                    <td><span class="badge badge-CRITICAL">CRITICAL</span></td>
+                    <td style="font-family: monospace; font-size: 12px;">OJS-SC-SQLI-003</td>
+                    <td>SQL Injection in OJS DAO retrieve method</td>
+                    <td>source_code</td>
+                    <td style="font-size: 12px; max-width: 250px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="/home/wiyu/Documents/01. Skripsi/code/SAST_NEO/tests/fixtures/php_vulnerable/ojs_vulnerable.php">ojs_vulnerable.php</td>
+                    <td>4</td>
+                    <td><span class="meta-tag">CWE-89</span></td>
+                </tr>
+                
+                <tr class="finding-row"
+                    data-severity="HIGH"
+                    data-category="source_code"
+                    data-index="36"
+                    onclick="showDetail(36)">
+                    <td><span class="badge badge-HIGH">HIGH</span></td>
+                    <td style="font-family: monospace; font-size: 12px;">OJS-SC-XSS-001</td>
+                    <td>Reflected XSS via direct output of user input</td>
+                    <td>source_code</td>
+                    <td style="font-size: 12px; max-width: 250px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="/home/wiyu/Documents/01. Skripsi/code/SAST_NEO/tests/fixtures/php_vulnerable/ojs_vulnerable.php">ojs_vulnerable.php</td>
+                    <td>11</td>
+                    <td><span class="meta-tag">CWE-79</span></td>
+                </tr>
+                
+                <tr class="finding-row"
+                    data-severity="HIGH"
+                    data-category="source_code"
+                    data-index="37"
+                    onclick="showDetail(37)">
+                    <td><span class="badge badge-HIGH">HIGH</span></td>
+                    <td style="font-family: monospace; font-size: 12px;">OJS-SC-XSS-001</td>
+                    <td>Reflected XSS via direct output of user input</td>
+                    <td>source_code</td>
+                    <td style="font-size: 12px; max-width: 250px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="/home/wiyu/Documents/01. Skripsi/code/SAST_NEO/tests/fixtures/php_vulnerable/ojs_vulnerable.php">ojs_vulnerable.php</td>
+                    <td>15</td>
+                    <td><span class="meta-tag">CWE-79</span></td>
+                </tr>
+                
+                <tr class="finding-row"
+                    data-severity="HIGH"
+                    data-category="source_code"
+                    data-index="38"
+                    onclick="showDetail(38)">
+                    <td><span class="badge badge-HIGH">HIGH</span></td>
+                    <td style="font-family: monospace; font-size: 12px;">OJS-SC-CVE-001</td>
+                    <td>CVE-2023-33970 - XSS via galley label</td>
+                    <td>source_code</td>
+                    <td style="font-size: 12px; max-width: 250px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="/home/wiyu/Documents/01. Skripsi/code/SAST_NEO/tests/fixtures/php_vulnerable/ojs_vulnerable.php">ojs_vulnerable.php</td>
+                    <td>19</td>
+                    <td><span class="meta-tag">CWE-79</span></td>
+                </tr>
+                
+            </tbody>
+        </table>
+
+        <!-- Footer -->
+        <div class="footer">
+            OJS-SAST v1.0.0 • Generated 2026-04-22T22:22:25 • 2 files scanned • 94 rules loaded
+        </div>
+    </div>
+
+    <!-- Detail Modal -->
+    <div class="modal-overlay" id="modalOverlay" onclick="if(event.target===this)closeModal()">
+        <div class="modal">
+            <div class="modal-header">
+                <h2 id="modalTitle"></h2>
+                <button class="modal-close" onclick="closeModal()">✕</button>
+            </div>
+            <div id="modalBody"></div>
+        </div>
+    </div>
+
+    <script>
+        const findings = [{"category": "source_code", "code_snippet": "       2 | // VULNERABLE: SQL Injection via $_GET in raw query\n       3 | $id = $_GET[\u0027id\u0027];\n\u003e\u003e\u003e    4 | $result = $this-\u003eretrieve(\"SELECT * FROM submissions WHERE id = \" . $id);\n       5 | \n       6 | // VULNERABLE: XSS via direct echo of user input", "cve_references": [], "cwe": "CWE-89", "description": "Data from user input ($_GET[\u0027id\u0027]) flows into a dangerous function (retrieve) without adequate sanitization.", "false_positive_likelihood": "LOW", "file_path": "/home/wiyu/Documents/01. Skripsi/code/SAST_NEO/tests/fixtures/php_vulnerable/vulnerable.php", "id": "TAINT-0001", "line_end": 4, "line_start": 3, "metadata": {}, "name": "SQL Injection via tainted input", "owasp": "A03:2021", "references": [], "remediation": "Use prepared statements or parameterized queries. If using OJS DAO, use $this-\u003e_driver-\u003eescapeString() or intval() for integer parameters.", "rule_id": "OJS-SC-SQLINJECTION-TAINT", "severity": "CRITICAL", "subcategory": "injection", "taint_path": {"intermediate_steps": ["$id = $_GET[\u0027id\u0027] (line 3)"], "sanitized": false, "sink": "retrieve", "sink_location": "/home/wiyu/Documents/01. Skripsi/code/SAST_NEO/tests/fixtures/php_vulnerable/vulnerable.php:4", "source": "$_GET[\u0027id\u0027]", "source_location": "/home/wiyu/Documents/01. Skripsi/code/SAST_NEO/tests/fixtures/php_vulnerable/vulnerable.php:3"}}, {"category": "source_code", "code_snippet": "      10 | // VULNERABLE: Command injection via exec\n      11 | $file = $_REQUEST[\u0027filename\u0027];\n\u003e\u003e\u003e   12 | exec(\"cat \" . $file);\n      13 | \n      14 | // VULNERABLE: eval with user input", "cve_references": [], "cwe": "CWE-78", "description": "Data from user input ($_REQUEST[\u0027filename\u0027]) flows into a dangerous function (exec) without adequate sanitization.", "false_positive_likelihood": "LOW", "file_path": "/home/wiyu/Documents/01. Skripsi/code/SAST_NEO/tests/fixtures/php_vulnerable/vulnerable.php", "id": "TAINT-0002", "line_end": 12, "line_start": 11, "metadata": {}, "name": "Remote Code Execution via tainted input", "owasp": "A03:2021", "references": [], "remediation": "Avoid using exec(), system(), or eval() with user input. Use escapeshellarg() and escapeshellcmd() if shell execution is absolutely necessary.", "rule_id": "OJS-SC-RCE-TAINT", "severity": "CRITICAL", "subcategory": "injection", "taint_path": {"intermediate_steps": ["$file = $_REQUEST[\u0027filename\u0027] (line 11)"], "sanitized": false, "sink": "exec", "sink_location": "/home/wiyu/Documents/01. Skripsi/code/SAST_NEO/tests/fixtures/php_vulnerable/vulnerable.php:12", "source": "$_REQUEST[\u0027filename\u0027]", "source_location": "/home/wiyu/Documents/01. Skripsi/code/SAST_NEO/tests/fixtures/php_vulnerable/vulnerable.php:11"}}, {"category": "source_code", "code_snippet": "      14 | // VULNERABLE: eval with user input\n      15 | $code = $_GET[\u0027code\u0027];\n\u003e\u003e\u003e   16 | eval($code);\n      17 | \n      18 | // VULNERABLE: File inclusion with user input", "cve_references": [], "cwe": "CWE-78", "description": "Data from user input ($_GET[\u0027code\u0027]) flows into a dangerous function (eval) without adequate sanitization.", "false_positive_likelihood": "LOW", "file_path": "/home/wiyu/Documents/01. Skripsi/code/SAST_NEO/tests/fixtures/php_vulnerable/vulnerable.php", "id": "TAINT-0003", "line_end": 16, "line_start": 15, "metadata": {}, "name": "Remote Code Execution via tainted input", "owasp": "A03:2021", "references": [], "remediation": "Avoid using exec(), system(), or eval() with user input. Use escapeshellarg() and escapeshellcmd() if shell execution is absolutely necessary.", "rule_id": "OJS-SC-RCE-TAINT", "severity": "CRITICAL", "subcategory": "injection", "taint_path": {"intermediate_steps": ["$code = $_GET[\u0027code\u0027] (line 15)"], "sanitized": false, "sink": "eval", "sink_location": "/home/wiyu/Documents/01. Skripsi/code/SAST_NEO/tests/fixtures/php_vulnerable/vulnerable.php:16", "source": "$_GET[\u0027code\u0027]", "source_location": "/home/wiyu/Documents/01. Skripsi/code/SAST_NEO/tests/fixtures/php_vulnerable/vulnerable.php:15"}}, {"category": "source_code", "code_snippet": "      22 | // VULNERABLE: Unserialize user input\n      23 | $data = $_COOKIE[\u0027session_data\u0027];\n\u003e\u003e\u003e   24 | $obj = unserialize($data);\n      25 | \n      26 | // VULNERABLE: SSRF via file_get_contents", "cve_references": [], "cwe": "CWE-502", "description": "Data from user input ($_COOKIE[\u0027session_data\u0027]) flows into a dangerous function (unserialize) without adequate sanitization.", "false_positive_likelihood": "LOW", "file_path": "/home/wiyu/Documents/01. Skripsi/code/SAST_NEO/tests/fixtures/php_vulnerable/vulnerable.php", "id": "TAINT-0004", "line_end": 24, "line_start": 23, "metadata": {}, "name": "Insecure Deserialization via tainted input", "owasp": "A08:2021", "references": [], "remediation": "Avoid unserialize() with user input. Use json_decode() instead. If unserialize is required, use allowed_classes option (PHP 7+).", "rule_id": "OJS-SC-DESERIALIZATION-TAINT", "severity": "HIGH", "subcategory": "misc", "taint_path": {"intermediate_steps": ["$data = $_COOKIE[\u0027session_data\u0027] (line 23)"], "sanitized": false, "sink": "unserialize", "sink_location": "/home/wiyu/Documents/01. Skripsi/code/SAST_NEO/tests/fixtures/php_vulnerable/vulnerable.php:24", "source": "$_COOKIE[\u0027session_data\u0027]", "source_location": "/home/wiyu/Documents/01. Skripsi/code/SAST_NEO/tests/fixtures/php_vulnerable/vulnerable.php:23"}}, {"category": "source_code", "code_snippet": "      26 | // VULNERABLE: SSRF via file_get_contents\n      27 | $url = $_GET[\u0027url\u0027];\n\u003e\u003e\u003e   28 | $content = file_get_contents($url);\n      29 | \n      30 | // VULNERABLE: Weak password hash", "cve_references": [], "cwe": "CWE-918", "description": "Data from user input ($_GET[\u0027url\u0027]) flows into a dangerous function (file_get_contents) without adequate sanitization.", "false_positive_likelihood": "LOW", "file_path": "/home/wiyu/Documents/01. Skripsi/code/SAST_NEO/tests/fixtures/php_vulnerable/vulnerable.php", "id": "TAINT-0005", "line_end": 28, "line_start": 27, "metadata": {}, "name": "Server-Side Request Forgery via tainted input", "owasp": "A10:2021", "references": [], "remediation": "Validate and whitelist allowed URLs/hosts. Block internal/private IP ranges. Use a URL parser to enforce allowed schemes (http/https only).", "rule_id": "OJS-SC-SSRF-TAINT", "severity": "HIGH", "subcategory": "misc", "taint_path": {"intermediate_steps": ["$url = $_GET[\u0027url\u0027] (line 27)"], "sanitized": false, "sink": "file_get_contents", "sink_location": "/home/wiyu/Documents/01. Skripsi/code/SAST_NEO/tests/fixtures/php_vulnerable/vulnerable.php:28", "source": "$_GET[\u0027url\u0027]", "source_location": "/home/wiyu/Documents/01. Skripsi/code/SAST_NEO/tests/fixtures/php_vulnerable/vulnerable.php:27"}}, {"category": "source_code", "code_snippet": "       6 | // VULNERABLE: XSS via direct echo of user input\n       7 | $name = $_POST[\u0027name\u0027];\n\u003e\u003e\u003e    8 | echo \"Hello, \" . $name;\n       9 | \n      10 | // VULNERABLE: Command injection via exec", "cve_references": [], "cwe": "CWE-79", "description": "Data from user input ($_POST[\u0027name\u0027]) flows into a dangerous function (echo/print) without adequate sanitization.", "false_positive_likelihood": "LOW", "file_path": "/home/wiyu/Documents/01. Skripsi/code/SAST_NEO/tests/fixtures/php_vulnerable/vulnerable.php", "id": "TAINT-0006", "line_end": 8, "line_start": 7, "metadata": {}, "name": "Cross-Site Scripting (XSS) via tainted input", "owasp": "A03:2021", "references": [], "remediation": "Apply htmlspecialchars($var, ENT_QUOTES, \u0027UTF-8\u0027) before output. In OJS Smarty templates, use |escape modifier. For rich text, use PKPString::stripUnsafeHtml().", "rule_id": "OJS-SC-XSS-TAINT", "severity": "HIGH", "subcategory": "injection", "taint_path": {"intermediate_steps": ["$name = $_POST[\u0027name\u0027] (line 7)"], "sanitized": false, "sink": "echo/print", "sink_location": "/home/wiyu/Documents/01. Skripsi/code/SAST_NEO/tests/fixtures/php_vulnerable/vulnerable.php:8", "source": "$_POST[\u0027name\u0027]", "source_location": "/home/wiyu/Documents/01. Skripsi/code/SAST_NEO/tests/fixtures/php_vulnerable/vulnerable.php:7"}}, {"category": "source_code", "code_snippet": "      14 | // VULNERABLE: eval with user input\n      15 | $code = $_GET[\u0027code\u0027];\n\u003e\u003e\u003e   16 | eval($code);\n      17 | \n      18 | // VULNERABLE: File inclusion with user input", "cve_references": [], "cwe": "CWE-94", "description": "The eval() function executes arbitrary PHP code. If it receives user-controlled input, an attacker can execute arbitrary commands.\n", "false_positive_likelihood": "LOW", "file_path": "/home/wiyu/Documents/01. Skripsi/code/SAST_NEO/tests/fixtures/php_vulnerable/vulnerable.php", "id": "PATTERN-0001", "line_end": 16, "line_start": 16, "metadata": {"matched_pattern": "eval($code)"}, "name": "Remote Code Execution via eval with user input", "owasp": "A03:2021", "references": ["https://cwe.mitre.org/data/definitions/94.html"], "remediation": "Remove eval() usage entirely. There is almost never a valid reason to use eval() in production code. Use proper control flow instead.\n", "rule_id": "OJS-SC-RCE-001", "severity": "CRITICAL", "subcategory": "injection", "taint_path": null}, {"category": "source_code", "code_snippet": "      10 | // VULNERABLE: Command injection via exec\n      11 | $file = $_REQUEST[\u0027filename\u0027];\n\u003e\u003e\u003e   12 | exec(\"cat \" . $file);\n      13 | \n      14 | // VULNERABLE: eval with user input", "cve_references": [], "cwe": "CWE-78", "description": "Shell execution functions (exec, system, shell_exec, passthru, popen) receive user-controlled input, enabling OS command injection.\n", "false_positive_likelihood": "LOW", "file_path": "/home/wiyu/Documents/01. Skripsi/code/SAST_NEO/tests/fixtures/php_vulnerable/vulnerable.php", "id": "PATTERN-0002", "line_end": 12, "line_start": 12, "metadata": {"matched_pattern": "exec(\"cat \" . $file)"}, "name": "Command Injection via shell execution functions", "owasp": "A03:2021", "references": [], "remediation": "Avoid calling shell commands with user input. If necessary, use escapeshellarg() for each argument and escapeshellcmd() for the command.\n", "rule_id": "OJS-SC-RCE-002", "severity": "CRITICAL", "subcategory": "injection", "taint_path": null}, {"category": "source_code", "code_snippet": "      45 | \n      46 | // VULNERABLE: preg_replace with /e\n\u003e\u003e\u003e   47 | $result = preg_replace(\u0027/.*/e\u0027, $_POST[\u0027replace\u0027], $input);\n      48 | ?\u003e", "cve_references": [], "cwe": "CWE-94", "description": "The preg_replace() function with the /e modifier evaluates the replacement string as PHP code. This is deprecated and dangerous.\n", "false_positive_likelihood": "LOW", "file_path": "/home/wiyu/Documents/01. Skripsi/code/SAST_NEO/tests/fixtures/php_vulnerable/vulnerable.php", "id": "PATTERN-0003", "line_end": 47, "line_start": 47, "metadata": {"matched_pattern": "preg_replace(\u0027/.*/e\u0027"}, "name": "Code execution via preg_replace with /e modifier", "owasp": "A03:2021", "references": [], "remediation": "Replace preg_replace() with /e modifier with preg_replace_callback(). The /e modifier is deprecated since PHP 5.5 and removed in PHP 7.0.\n", "rule_id": "OJS-SC-RCE-003", "severity": "CRITICAL", "subcategory": "injection", "taint_path": null}, {"category": "source_code", "code_snippet": "      45 | \n      46 | // VULNERABLE: preg_replace with /e\n\u003e\u003e\u003e   47 | $result = preg_replace(\u0027/.*/e\u0027, $_POST[\u0027replace\u0027], $input);\n      48 | ?\u003e", "cve_references": [], "cwe": "CWE-94", "description": "The preg_replace() function with the /e modifier evaluates the replacement string as PHP code. This is deprecated and dangerous.\n", "false_positive_likelihood": "LOW", "file_path": "/home/wiyu/Documents/01. Skripsi/code/SAST_NEO/tests/fixtures/php_vulnerable/vulnerable.php", "id": "PATTERN-0004", "line_end": 47, "line_start": 47, "metadata": {"matched_pattern": "preg_replace(\u0027/.*/e\u0027"}, "name": "Code execution via preg_replace with /e modifier", "owasp": "A03:2021", "references": [], "remediation": "Replace preg_replace() with /e modifier with preg_replace_callback(). The /e modifier is deprecated since PHP 5.5 and removed in PHP 7.0.\n", "rule_id": "OJS-SC-RCE-003", "severity": "CRITICAL", "subcategory": "injection", "taint_path": null}, {"category": "source_code", "code_snippet": "       2 | // VULNERABLE: SQL Injection via $_GET in raw query\n       3 | $id = $_GET[\u0027id\u0027];\n\u003e\u003e\u003e    4 | $result = $this-\u003eretrieve(\"SELECT * FROM submissions WHERE id = \" . $id);\n       5 | \n       6 | // VULNERABLE: XSS via direct echo of user input", "cve_references": [], "cwe": "CWE-89", "description": "A SQL query is built using string concatenation with variables that may contain user input, creating a SQL injection vulnerability.\n", "false_positive_likelihood": "LOW", "file_path": "/home/wiyu/Documents/01. Skripsi/code/SAST_NEO/tests/fixtures/php_vulnerable/vulnerable.php", "id": "PATTERN-0005", "line_end": 4, "line_start": 4, "metadata": {"matched_pattern": "-\u003eretrieve(\"SELECT * FROM submissions WHERE id = \" . $id"}, "name": "SQL Injection via string concatenation in query", "owasp": "A03:2021", "references": ["https://cwe.mitre.org/data/definitions/89.html"], "remediation": "Never concatenate variables into SQL strings. Use parameterized queries or the OJS DAO pattern with proper escaping.\n", "rule_id": "OJS-SC-SQLI-002", "severity": "HIGH", "subcategory": "injection", "taint_path": null}, {"category": "source_code", "code_snippet": "       2 | // VULNERABLE: SQL Injection via $_GET in raw query\n       3 | $id = $_GET[\u0027id\u0027];\n\u003e\u003e\u003e    4 | $result = $this-\u003eretrieve(\"SELECT * FROM submissions WHERE id = \" . $id);\n       5 | \n       6 | // VULNERABLE: XSS via direct echo of user input", "cve_references": [], "cwe": "CWE-89", "description": "The OJS DAO retrieve() method is called with interpolated variables, which may allow SQL injection if the variables are not properly sanitized.\n", "false_positive_likelihood": "LOW", "file_path": "/home/wiyu/Documents/01. Skripsi/code/SAST_NEO/tests/fixtures/php_vulnerable/vulnerable.php", "id": "PATTERN-0006", "line_end": 4, "line_start": 4, "metadata": {"matched_pattern": "$this-\u003eretrieve(\"SELECT * FROM submissions WHERE id = \" . $id"}, "name": "SQL Injection in OJS DAO retrieve method", "owasp": "A03:2021", "references": [], "remediation": "Use the array-based parameter binding in OJS DAO: $this-\u003eretrieve(\u0027SELECT * FROM t WHERE id = ?\u0027, array((int) $id));\n", "rule_id": "OJS-SC-SQLI-003", "severity": "CRITICAL", "subcategory": "injection", "taint_path": null}, {"category": "source_code", "code_snippet": "       1 | \u003c?php\n       2 | // VULNERABLE: SQL Injection via $_GET in raw query\n\u003e\u003e\u003e    3 | $id = $_GET[\u0027id\u0027];\n       4 | $result = $this-\u003eretrieve(\"SELECT * FROM submissions WHERE id = \" . $id);\n       5 | ", "cve_references": [], "cwe": "CWE-79", "description": "User input from superglobals is directly echoed to the browser without HTML encoding, allowing reflected XSS attacks.\n", "false_positive_likelihood": "LOW", "file_path": "/home/wiyu/Documents/01. Skripsi/code/SAST_NEO/tests/fixtures/php_vulnerable/vulnerable.php", "id": "PATTERN-0007", "line_end": 3, "line_start": 3, "metadata": {"matched_pattern": "= $_GET["}, "name": "Reflected XSS via direct output of user input", "owasp": "A03:2021", "references": ["https://cwe.mitre.org/data/definitions/79.html"], "remediation": "Apply htmlspecialchars($var, ENT_QUOTES, \u0027UTF-8\u0027) before output. In Smarty templates, use {$var|escape:\u0027html\u0027}.\n", "rule_id": "OJS-SC-XSS-001", "severity": "HIGH", "subcategory": "injection", "taint_path": null}, {"category": "source_code", "code_snippet": "       5 | \n       6 | // VULNERABLE: XSS via direct echo of user input\n\u003e\u003e\u003e    7 | $name = $_POST[\u0027name\u0027];\n       8 | echo \"Hello, \" . $name;\n       9 | ", "cve_references": [], "cwe": "CWE-79", "description": "User input from superglobals is directly echoed to the browser without HTML encoding, allowing reflected XSS attacks.\n", "false_positive_likelihood": "LOW", "file_path": "/home/wiyu/Documents/01. Skripsi/code/SAST_NEO/tests/fixtures/php_vulnerable/vulnerable.php", "id": "PATTERN-0008", "line_end": 7, "line_start": 7, "metadata": {"matched_pattern": "= $_POST["}, "name": "Reflected XSS via direct output of user input", "owasp": "A03:2021", "references": ["https://cwe.mitre.org/data/definitions/79.html"], "remediation": "Apply htmlspecialchars($var, ENT_QUOTES, \u0027UTF-8\u0027) before output. In Smarty templates, use {$var|escape:\u0027html\u0027}.\n", "rule_id": "OJS-SC-XSS-001", "severity": "HIGH", "subcategory": "injection", "taint_path": null}, {"category": "source_code", "code_snippet": "       9 | \n      10 | // VULNERABLE: Command injection via exec\n\u003e\u003e\u003e   11 | $file = $_REQUEST[\u0027filename\u0027];\n      12 | exec(\"cat \" . $file);\n      13 | ", "cve_references": [], "cwe": "CWE-79", "description": "User input from superglobals is directly echoed to the browser without HTML encoding, allowing reflected XSS attacks.\n", "false_positive_likelihood": "LOW", "file_path": "/home/wiyu/Documents/01. Skripsi/code/SAST_NEO/tests/fixtures/php_vulnerable/vulnerable.php", "id": "PATTERN-0009", "line_end": 11, "line_start": 11, "metadata": {"matched_pattern": "= $_REQUEST["}, "name": "Reflected XSS via direct output of user input", "owasp": "A03:2021", "references": ["https://cwe.mitre.org/data/definitions/79.html"], "remediation": "Apply htmlspecialchars($var, ENT_QUOTES, \u0027UTF-8\u0027) before output. In Smarty templates, use {$var|escape:\u0027html\u0027}.\n", "rule_id": "OJS-SC-XSS-001", "severity": "HIGH", "subcategory": "injection", "taint_path": null}, {"category": "source_code", "code_snippet": "      13 | \n      14 | // VULNERABLE: eval with user input\n\u003e\u003e\u003e   15 | $code = $_GET[\u0027code\u0027];\n      16 | eval($code);\n      17 | ", "cve_references": [], "cwe": "CWE-79", "description": "User input from superglobals is directly echoed to the browser without HTML encoding, allowing reflected XSS attacks.\n", "false_positive_likelihood": "LOW", "file_path": "/home/wiyu/Documents/01. Skripsi/code/SAST_NEO/tests/fixtures/php_vulnerable/vulnerable.php", "id": "PATTERN-0010", "line_end": 15, "line_start": 15, "metadata": {"matched_pattern": "= $_GET["}, "name": "Reflected XSS via direct output of user input", "owasp": "A03:2021", "references": ["https://cwe.mitre.org/data/definitions/79.html"], "remediation": "Apply htmlspecialchars($var, ENT_QUOTES, \u0027UTF-8\u0027) before output. In Smarty templates, use {$var|escape:\u0027html\u0027}.\n", "rule_id": "OJS-SC-XSS-001", "severity": "HIGH", "subcategory": "injection", "taint_path": null}, {"category": "source_code", "code_snippet": "      17 | \n      18 | // VULNERABLE: File inclusion with user input\n\u003e\u003e\u003e   19 | $page = $_GET[\u0027page\u0027];\n      20 | include($page . \".php\");\n      21 | ", "cve_references": [], "cwe": "CWE-79", "description": "User input from superglobals is directly echoed to the browser without HTML encoding, allowing reflected XSS attacks.\n", "false_positive_likelihood": "LOW", "file_path": "/home/wiyu/Documents/01. Skripsi/code/SAST_NEO/tests/fixtures/php_vulnerable/vulnerable.php", "id": "PATTERN-0011", "line_end": 19, "line_start": 19, "metadata": {"matched_pattern": "= $_GET["}, "name": "Reflected XSS via direct output of user input", "owasp": "A03:2021", "references": ["https://cwe.mitre.org/data/definitions/79.html"], "remediation": "Apply htmlspecialchars($var, ENT_QUOTES, \u0027UTF-8\u0027) before output. In Smarty templates, use {$var|escape:\u0027html\u0027}.\n", "rule_id": "OJS-SC-XSS-001", "severity": "HIGH", "subcategory": "injection", "taint_path": null}, {"category": "source_code", "code_snippet": "      25 | \n      26 | // VULNERABLE: SSRF via file_get_contents\n\u003e\u003e\u003e   27 | $url = $_GET[\u0027url\u0027];\n      28 | $content = file_get_contents($url);\n      29 | ", "cve_references": [], "cwe": "CWE-79", "description": "User input from superglobals is directly echoed to the browser without HTML encoding, allowing reflected XSS attacks.\n", "false_positive_likelihood": "LOW", "file_path": "/home/wiyu/Documents/01. Skripsi/code/SAST_NEO/tests/fixtures/php_vulnerable/vulnerable.php", "id": "PATTERN-0012", "line_end": 27, "line_start": 27, "metadata": {"matched_pattern": "= $_GET["}, "name": "Reflected XSS via direct output of user input", "owasp": "A03:2021", "references": ["https://cwe.mitre.org/data/definitions/79.html"], "remediation": "Apply htmlspecialchars($var, ENT_QUOTES, \u0027UTF-8\u0027) before output. In Smarty templates, use {$var|escape:\u0027html\u0027}.\n", "rule_id": "OJS-SC-XSS-001", "severity": "HIGH", "subcategory": "injection", "taint_path": null}, {"category": "source_code", "code_snippet": "      29 | \n      30 | // VULNERABLE: Weak password hash\n\u003e\u003e\u003e   31 | $password = $_POST[\u0027password\u0027];\n      32 | $hash = md5($password);\n      33 | ", "cve_references": [], "cwe": "CWE-79", "description": "User input from superglobals is directly echoed to the browser without HTML encoding, allowing reflected XSS attacks.\n", "false_positive_likelihood": "LOW", "file_path": "/home/wiyu/Documents/01. Skripsi/code/SAST_NEO/tests/fixtures/php_vulnerable/vulnerable.php", "id": "PATTERN-0013", "line_end": 31, "line_start": 31, "metadata": {"matched_pattern": "= $_POST["}, "name": "Reflected XSS via direct output of user input", "owasp": "A03:2021", "references": ["https://cwe.mitre.org/data/definitions/79.html"], "remediation": "Apply htmlspecialchars($var, ENT_QUOTES, \u0027UTF-8\u0027) before output. In Smarty templates, use {$var|escape:\u0027html\u0027}.\n", "rule_id": "OJS-SC-XSS-001", "severity": "HIGH", "subcategory": "injection", "taint_path": null}, {"category": "source_code", "code_snippet": "      22 | // VULNERABLE: Unserialize user input\n      23 | $data = $_COOKIE[\u0027session_data\u0027];\n\u003e\u003e\u003e   24 | $obj = unserialize($data);\n      25 | \n      26 | // VULNERABLE: SSRF via file_get_contents", "cve_references": [], "cwe": "CWE-502", "description": "unserialize() is called with data that may originate from user input, allowing object injection attacks.\n", "false_positive_likelihood": "LOW", "file_path": "/home/wiyu/Documents/01. Skripsi/code/SAST_NEO/tests/fixtures/php_vulnerable/vulnerable.php", "id": "PATTERN-0014", "line_end": 24, "line_start": 24, "metadata": {"matched_pattern": "unserialize($data)"}, "name": "Insecure deserialization with user input", "owasp": "A08:2021", "references": [], "remediation": "Avoid unserialize() with user input. Use json_decode() instead. If unserialize is required, use allowed_classes option: unserialize($data, [\u0027allowed_classes\u0027 =\u003e false])\n", "rule_id": "OJS-SC-DESER-001", "severity": "CRITICAL", "subcategory": "misc", "taint_path": null}, {"category": "source_code", "code_snippet": "      39 | \n      40 | // VULNERABLE: var_dump in production\n\u003e\u003e\u003e   41 | var_dump($user_data);\n      42 | \n      43 | // VULNERABLE: phpinfo exposed", "cve_references": [], "cwe": "CWE-215", "description": "Debug functions (var_dump, print_r, debug_backtrace) are present in production code, potentially leaking sensitive information.\n", "false_positive_likelihood": "LOW", "file_path": "/home/wiyu/Documents/01. Skripsi/code/SAST_NEO/tests/fixtures/php_vulnerable/vulnerable.php", "id": "PATTERN-0015", "line_end": 41, "line_start": 41, "metadata": {"matched_pattern": "var_dump("}, "name": "Debug function left in production code", "owasp": "A05:2021", "references": [], "remediation": "Remove all debug functions from production code. Use proper logging instead of debug output functions.\n", "rule_id": "OJS-SC-DEBUG-001", "severity": "MEDIUM", "subcategory": "exposure", "taint_path": null}, {"category": "source_code", "code_snippet": "      42 | \n      43 | // VULNERABLE: phpinfo exposed\n\u003e\u003e\u003e   44 | phpinfo();\n      45 | \n      46 | // VULNERABLE: preg_replace with /e", "cve_references": [], "cwe": "CWE-200", "description": "phpinfo() is called in the codebase, potentially exposing server configuration details to attackers.\n", "false_positive_likelihood": "LOW", "file_path": "/home/wiyu/Documents/01. Skripsi/code/SAST_NEO/tests/fixtures/php_vulnerable/vulnerable.php", "id": "PATTERN-0016", "line_end": 44, "line_start": 44, "metadata": {"matched_pattern": "phpinfo()"}, "name": "phpinfo() exposed", "owasp": "A05:2021", "references": [], "remediation": "Remove phpinfo() calls from production code entirely.\n", "rule_id": "OJS-SC-DEBUG-003", "severity": "HIGH", "subcategory": "exposure", "taint_path": null}, {"category": "source_code", "code_snippet": "      26 | // VULNERABLE: SSRF via file_get_contents\n      27 | $url = $_GET[\u0027url\u0027];\n\u003e\u003e\u003e   28 | $content = file_get_contents($url);\n      29 | \n      30 | // VULNERABLE: Weak password hash", "cve_references": [], "cwe": "CWE-22", "description": "User input containing path traversal sequences (../) is used in file operations, allowing access to arbitrary files.\n", "false_positive_likelihood": "LOW", "file_path": "/home/wiyu/Documents/01. Skripsi/code/SAST_NEO/tests/fixtures/php_vulnerable/vulnerable.php", "id": "PATTERN-0017", "line_end": 28, "line_start": 28, "metadata": {"matched_pattern": "file_get_contents($url"}, "name": "Path traversal in file operations", "owasp": "A01:2021", "references": ["https://cwe.mitre.org/data/definitions/22.html"], "remediation": "Use basename() to strip directory components from user input. Validate with realpath() and check the result is within allowed directories.\n", "rule_id": "OJS-SC-PT-001", "severity": "HIGH", "subcategory": "file_ops", "taint_path": null}, {"category": "source_code", "code_snippet": "      30 | // VULNERABLE: Weak password hash\n      31 | $password = $_POST[\u0027password\u0027];\n\u003e\u003e\u003e   32 | $hash = md5($password);\n      33 | \n      34 | // VULNERABLE: Insecure randomness for token", "cve_references": [], "cwe": "CWE-328", "description": "md5() or sha1() is used for password hashing, which is computationally fast and vulnerable to brute-force attacks.\n", "false_positive_likelihood": "LOW", "file_path": "/home/wiyu/Documents/01. Skripsi/code/SAST_NEO/tests/fixtures/php_vulnerable/vulnerable.php", "id": "PATTERN-0018", "line_end": 32, "line_start": 32, "metadata": {"matched_pattern": "md5($pass"}, "name": "Weak hash algorithm for password storage", "owasp": "A02:2021", "references": [], "remediation": "Use password_hash() with PASSWORD_BCRYPT or PASSWORD_ARGON2ID. Verify with password_verify().\n", "rule_id": "OJS-SC-HASH-001", "severity": "HIGH", "subcategory": "crypto", "taint_path": null}, {"category": "source_code", "code_snippet": "      33 | \n      34 | // VULNERABLE: Insecure randomness for token\n\u003e\u003e\u003e   35 | $token = md5(rand());\n      36 | \n      37 | // VULNERABLE: Hardcoded password", "cve_references": [], "cwe": "CWE-328", "description": "md5() is used for generating tokens, signatures, or other security-sensitive values where collision resistance matters.\n", "false_positive_likelihood": "LOW", "file_path": "/home/wiyu/Documents/01. Skripsi/code/SAST_NEO/tests/fixtures/php_vulnerable/vulnerable.php", "id": "PATTERN-0019", "line_end": 35, "line_start": 35, "metadata": {"matched_pattern": "md5(rand("}, "name": "MD5 used for security-sensitive operation", "owasp": "A02:2021", "references": [], "remediation": "Use hash(\u0027sha256\u0027, ...) or hash_hmac() for security operations. For tokens, use random_bytes() or bin2hex(random_bytes(32)).\n", "rule_id": "OJS-SC-HASH-002", "severity": "MEDIUM", "subcategory": "crypto", "taint_path": null}, {"category": "source_code", "code_snippet": "      30 | // VULNERABLE: Weak password hash\n      31 | $password = $_POST[\u0027password\u0027];\n\u003e\u003e\u003e   32 | $hash = md5($password);\n      33 | \n      34 | // VULNERABLE: Insecure randomness for token", "cve_references": [], "cwe": "CWE-916", "description": "A hash function is used without a salt, making it vulnerable to rainbow table attacks.\n", "false_positive_likelihood": "LOW", "file_path": "/home/wiyu/Documents/01. Skripsi/code/SAST_NEO/tests/fixtures/php_vulnerable/vulnerable.php", "id": "PATTERN-0020", "line_end": 32, "line_start": 32, "metadata": {"matched_pattern": "md5($password)"}, "name": "Unsalted hash usage", "owasp": "A02:2021", "references": [], "remediation": "Use password_hash() which automatically handles salting. If using hash(), prepend a unique per-user salt.\n", "rule_id": "OJS-SC-HASH-003", "severity": "MEDIUM", "subcategory": "crypto", "taint_path": null}, {"category": "source_code", "code_snippet": "      33 | \n      34 | // VULNERABLE: Insecure randomness for token\n\u003e\u003e\u003e   35 | $token = md5(rand());\n      36 | \n      37 | // VULNERABLE: Hardcoded password", "cve_references": [], "cwe": "CWE-330", "description": "rand() or mt_rand() is used for generating security tokens, which are predictable and not cryptographically secure.\n", "false_positive_likelihood": "LOW", "file_path": "/home/wiyu/Documents/01. Skripsi/code/SAST_NEO/tests/fixtures/php_vulnerable/vulnerable.php", "id": "PATTERN-0021", "line_end": 35, "line_start": 35, "metadata": {"matched_pattern": "token = md5(rand("}, "name": "Insecure randomness for security tokens", "owasp": "A02:2021", "references": [], "remediation": "Use random_bytes() or random_int() for cryptographic randomness. In OJS, use PKPSecurity methods for token generation.\n", "rule_id": "OJS-SC-RAND-001", "severity": "HIGH", "subcategory": "crypto", "taint_path": null}, {"category": "source_code", "code_snippet": "      33 | \n      34 | // VULNERABLE: Insecure randomness for token\n\u003e\u003e\u003e   35 | $token = md5(rand());\n      36 | \n      37 | // VULNERABLE: Hardcoded password", "cve_references": [], "cwe": "CWE-330", "description": "Password reset tokens are generated using weak randomness (rand(), mt_rand(), uniqid()) instead of cryptographically secure methods.\n", "false_positive_likelihood": "LOW", "file_path": "/home/wiyu/Documents/01. Skripsi/code/SAST_NEO/tests/fixtures/php_vulnerable/vulnerable.php", "id": "PATTERN-0022", "line_end": 35, "line_start": 35, "metadata": {"matched_pattern": "token = md5(rand("}, "name": "Weak token generation for password reset", "owasp": "A02:2021", "references": [], "remediation": "Use random_bytes() or openssl_random_pseudo_bytes() for generating security tokens. In OJS, use PKPSecurity::generateRandomToken().\n", "rule_id": "OJS-SC-AUTH-002", "severity": "HIGH", "subcategory": "auth", "taint_path": null}, {"category": "source_code", "code_snippet": "      36 | \n      37 | // VULNERABLE: Hardcoded password\n\u003e\u003e\u003e   38 | $db_password = \"supersecret123\";\n      39 | \n      40 | // VULNERABLE: var_dump in production", "cve_references": [], "cwe": "CWE-798", "description": "Authentication credentials are hardcoded in the source code, which could be exposed through source code leaks.\n", "false_positive_likelihood": "LOW", "file_path": "/home/wiyu/Documents/01. Skripsi/code/SAST_NEO/tests/fixtures/php_vulnerable/vulnerable.php", "id": "PATTERN-0023", "line_end": 38, "line_start": 38, "metadata": {"matched_pattern": "password = \"supersecret123\""}, "name": "Hardcoded authentication credentials", "owasp": "A07:2021", "references": [], "remediation": "Store credentials in environment variables or a secure configuration file outside the web root. Never hardcode secrets in source code.\n", "rule_id": "OJS-SC-AUTH-003", "severity": "CRITICAL", "subcategory": "auth", "taint_path": null}, {"category": "source_code", "code_snippet": "       5 | \n       6 | // VULNERABLE: XSS via direct echo of user input\n\u003e\u003e\u003e    7 | $name = $_POST[\u0027name\u0027];\n       8 | echo \"Hello, \" . $name;\n       9 | ", "cve_references": [], "cwe": "CWE-352", "description": "A form processing handler does not validate a CSRF token, allowing cross-site request forgery attacks.\n", "false_positive_likelihood": "LOW", "file_path": "/home/wiyu/Documents/01. Skripsi/code/SAST_NEO/tests/fixtures/php_vulnerable/vulnerable.php", "id": "PATTERN-0024", "line_end": 7, "line_start": 7, "metadata": {"matched_pattern": "POST"}, "name": "Form submission without CSRF token validation", "owasp": "A01:2021", "references": [], "remediation": "Include a CSRF token in all POST forms and validate it server-side. OJS provides CSRFTokenManager for this purpose.\n", "rule_id": "OJS-SC-CSRF-001", "severity": "HIGH", "subcategory": "auth", "taint_path": null}, {"category": "source_code", "code_snippet": "      29 | \n      30 | // VULNERABLE: Weak password hash\n\u003e\u003e\u003e   31 | $password = $_POST[\u0027password\u0027];\n      32 | $hash = md5($password);\n      33 | ", "cve_references": [], "cwe": "CWE-352", "description": "A form processing handler does not validate a CSRF token, allowing cross-site request forgery attacks.\n", "false_positive_likelihood": "LOW", "file_path": "/home/wiyu/Documents/01. Skripsi/code/SAST_NEO/tests/fixtures/php_vulnerable/vulnerable.php", "id": "PATTERN-0025", "line_end": 31, "line_start": 31, "metadata": {"matched_pattern": "POST"}, "name": "Form submission without CSRF token validation", "owasp": "A01:2021", "references": [], "remediation": "Include a CSRF token in all POST forms and validate it server-side. OJS provides CSRFTokenManager for this purpose.\n", "rule_id": "OJS-SC-CSRF-001", "severity": "HIGH", "subcategory": "auth", "taint_path": null}, {"category": "source_code", "code_snippet": "      45 | \n      46 | // VULNERABLE: preg_replace with /e\n\u003e\u003e\u003e   47 | $result = preg_replace(\u0027/.*/e\u0027, $_POST[\u0027replace\u0027], $input);\n      48 | ?\u003e", "cve_references": [], "cwe": "CWE-352", "description": "A form processing handler does not validate a CSRF token, allowing cross-site request forgery attacks.\n", "false_positive_likelihood": "LOW", "file_path": "/home/wiyu/Documents/01. Skripsi/code/SAST_NEO/tests/fixtures/php_vulnerable/vulnerable.php", "id": "PATTERN-0026", "line_end": 47, "line_start": 47, "metadata": {"matched_pattern": "POST"}, "name": "Form submission without CSRF token validation", "owasp": "A01:2021", "references": [], "remediation": "Include a CSRF token in all POST forms and validate it server-side. OJS provides CSRFTokenManager for this purpose.\n", "rule_id": "OJS-SC-CSRF-001", "severity": "HIGH", "subcategory": "auth", "taint_path": null}, {"category": "source_code", "code_snippet": "       2 | // VULNERABLE: OJS-specific SQL injection via getUserVar\n       3 | $submissionId = $request-\u003egetUserVar(\u0027submissionId\u0027);\n\u003e\u003e\u003e    4 | $result = $this-\u003eretrieve(\"SELECT * FROM submissions WHERE id = \" . $submissionId);\n       5 | \n       6 | // VULNERABLE: XSS via templateMgr-\u003eassign without escaping", "cve_references": [], "cwe": "CWE-89", "description": "Data from user input ($request-\u003egetUserVar(\u0027submissionId\u0027)) flows into a dangerous function (retrieve) without adequate sanitization.", "false_positive_likelihood": "LOW", "file_path": "/home/wiyu/Documents/01. Skripsi/code/SAST_NEO/tests/fixtures/php_vulnerable/ojs_vulnerable.php", "id": "TAINT-0001", "line_end": 4, "line_start": 3, "metadata": {}, "name": "SQL Injection via tainted input", "owasp": "A03:2021", "references": [], "remediation": "Use prepared statements or parameterized queries. If using OJS DAO, use $this-\u003e_driver-\u003eescapeString() or intval() for integer parameters.", "rule_id": "OJS-SC-SQLINJECTION-TAINT", "severity": "CRITICAL", "subcategory": "injection", "taint_path": {"intermediate_steps": ["$submissionId = $request-\u003egetUserVar(\u0027submissionId\u0027) (line 3)"], "sanitized": false, "sink": "retrieve", "sink_location": "/home/wiyu/Documents/01. Skripsi/code/SAST_NEO/tests/fixtures/php_vulnerable/ojs_vulnerable.php:4", "source": "$request-\u003egetUserVar(\u0027submissionId\u0027)", "source_location": "/home/wiyu/Documents/01. Skripsi/code/SAST_NEO/tests/fixtures/php_vulnerable/ojs_vulnerable.php:3"}}, {"category": "source_code", "code_snippet": "       6 | // VULNERABLE: XSS via templateMgr-\u003eassign without escaping\n       7 | $title = $request-\u003egetUserVar(\u0027title\u0027);\n\u003e\u003e\u003e    8 | $templateMgr-\u003eassign(\u0027articleTitle\u0027, $title);\n       9 | \n      10 | // VULNERABLE: OJS IDOR", "cve_references": [], "cwe": "CWE-79", "description": "Data from user input ($request-\u003egetUserVar(\u0027title\u0027)) flows into a dangerous function (assign) without adequate sanitization.", "false_positive_likelihood": "LOW", "file_path": "/home/wiyu/Documents/01. Skripsi/code/SAST_NEO/tests/fixtures/php_vulnerable/ojs_vulnerable.php", "id": "TAINT-0002", "line_end": 8, "line_start": 7, "metadata": {}, "name": "Cross-Site Scripting (XSS) via tainted input", "owasp": "A03:2021", "references": [], "remediation": "Apply htmlspecialchars($var, ENT_QUOTES, \u0027UTF-8\u0027) before output. In OJS Smarty templates, use |escape modifier. For rich text, use PKPString::stripUnsafeHtml().", "rule_id": "OJS-SC-XSS-TAINT", "severity": "HIGH", "subcategory": "injection", "taint_path": {"intermediate_steps": ["$title = $request-\u003egetUserVar(\u0027title\u0027) (line 7)"], "sanitized": false, "sink": "assign", "sink_location": "/home/wiyu/Documents/01. Skripsi/code/SAST_NEO/tests/fixtures/php_vulnerable/ojs_vulnerable.php:8", "source": "$request-\u003egetUserVar(\u0027title\u0027)", "source_location": "/home/wiyu/Documents/01. Skripsi/code/SAST_NEO/tests/fixtures/php_vulnerable/ojs_vulnerable.php:7"}}, {"category": "source_code", "code_snippet": "       2 | // VULNERABLE: OJS-specific SQL injection via getUserVar\n       3 | $submissionId = $request-\u003egetUserVar(\u0027submissionId\u0027);\n\u003e\u003e\u003e    4 | $result = $this-\u003eretrieve(\"SELECT * FROM submissions WHERE id = \" . $submissionId);\n       5 | \n       6 | // VULNERABLE: XSS via templateMgr-\u003eassign without escaping", "cve_references": [], "cwe": "CWE-89", "description": "A SQL query is built using string concatenation with variables that may contain user input, creating a SQL injection vulnerability.\n", "false_positive_likelihood": "LOW", "file_path": "/home/wiyu/Documents/01. Skripsi/code/SAST_NEO/tests/fixtures/php_vulnerable/ojs_vulnerable.php", "id": "PATTERN-0027", "line_end": 4, "line_start": 4, "metadata": {"matched_pattern": "-\u003eretrieve(\"SELECT * FROM submissions WHERE id = \" . $submissionId"}, "name": "SQL Injection via string concatenation in query", "owasp": "A03:2021", "references": ["https://cwe.mitre.org/data/definitions/89.html"], "remediation": "Never concatenate variables into SQL strings. Use parameterized queries or the OJS DAO pattern with proper escaping.\n", "rule_id": "OJS-SC-SQLI-002", "severity": "HIGH", "subcategory": "injection", "taint_path": null}, {"category": "source_code", "code_snippet": "       2 | // VULNERABLE: OJS-specific SQL injection via getUserVar\n       3 | $submissionId = $request-\u003egetUserVar(\u0027submissionId\u0027);\n\u003e\u003e\u003e    4 | $result = $this-\u003eretrieve(\"SELECT * FROM submissions WHERE id = \" . $submissionId);\n       5 | \n       6 | // VULNERABLE: XSS via templateMgr-\u003eassign without escaping", "cve_references": [], "cwe": "CWE-89", "description": "The OJS DAO retrieve() method is called with interpolated variables, which may allow SQL injection if the variables are not properly sanitized.\n", "false_positive_likelihood": "LOW", "file_path": "/home/wiyu/Documents/01. Skripsi/code/SAST_NEO/tests/fixtures/php_vulnerable/ojs_vulnerable.php", "id": "PATTERN-0028", "line_end": 4, "line_start": 4, "metadata": {"matched_pattern": "$this-\u003eretrieve(\"SELECT * FROM submissions WHERE id = \" . $submissionId"}, "name": "SQL Injection in OJS DAO retrieve method", "owasp": "A03:2021", "references": [], "remediation": "Use the array-based parameter binding in OJS DAO: $this-\u003eretrieve(\u0027SELECT * FROM t WHERE id = ?\u0027, array((int) $id));\n", "rule_id": "OJS-SC-SQLI-003", "severity": "CRITICAL", "subcategory": "injection", "taint_path": null}, {"category": "source_code", "code_snippet": "       9 | \n      10 | // VULNERABLE: OJS IDOR\n\u003e\u003e\u003e   11 | $articleId = $_GET[\u0027articleId\u0027];\n      12 | $article = $articleDAO-\u003egetById($articleId);\n      13 | ", "cve_references": [], "cwe": "CWE-79", "description": "User input from superglobals is directly echoed to the browser without HTML encoding, allowing reflected XSS attacks.\n", "false_positive_likelihood": "LOW", "file_path": "/home/wiyu/Documents/01. Skripsi/code/SAST_NEO/tests/fixtures/php_vulnerable/ojs_vulnerable.php", "id": "PATTERN-0029", "line_end": 11, "line_start": 11, "metadata": {"matched_pattern": "= $_GET["}, "name": "Reflected XSS via direct output of user input", "owasp": "A03:2021", "references": ["https://cwe.mitre.org/data/definitions/79.html"], "remediation": "Apply htmlspecialchars($var, ENT_QUOTES, \u0027UTF-8\u0027) before output. In Smarty templates, use {$var|escape:\u0027html\u0027}.\n", "rule_id": "OJS-SC-XSS-001", "severity": "HIGH", "subcategory": "injection", "taint_path": null}, {"category": "source_code", "code_snippet": "      13 | \n      14 | // VULNERABLE: OJS hook with user input\n\u003e\u003e\u003e   15 | $hookName = $_GET[\u0027hook\u0027];\n      16 | HookRegistry::register($hookName, array($this, \u0027callback\u0027));\n      17 | ", "cve_references": [], "cwe": "CWE-79", "description": "User input from superglobals is directly echoed to the browser without HTML encoding, allowing reflected XSS attacks.\n", "false_positive_likelihood": "LOW", "file_path": "/home/wiyu/Documents/01. Skripsi/code/SAST_NEO/tests/fixtures/php_vulnerable/ojs_vulnerable.php", "id": "PATTERN-0030", "line_end": 15, "line_start": 15, "metadata": {"matched_pattern": "= $_GET["}, "name": "Reflected XSS via direct output of user input", "owasp": "A03:2021", "references": ["https://cwe.mitre.org/data/definitions/79.html"], "remediation": "Apply htmlspecialchars($var, ENT_QUOTES, \u0027UTF-8\u0027) before output. In Smarty templates, use {$var|escape:\u0027html\u0027}.\n", "rule_id": "OJS-SC-XSS-001", "severity": "HIGH", "subcategory": "injection", "taint_path": null}, {"category": "source_code", "code_snippet": "      17 | \n      18 | // VULNERABLE: Galley label without escaping (CVE-2023-33970)\n\u003e\u003e\u003e   19 | $label = $galley-\u003egetLabel();\n      20 | $templateMgr-\u003eassign(\u0027galleyLabel\u0027, $label);\n      21 | ?\u003e", "cve_references": ["CVE-2023-33970"], "cwe": "CWE-79", "description": "OJS versions before 3.3.0-16 are vulnerable to stored XSS through the galley label field. An authenticated user can inject JavaScript via a crafted galley label.\n", "false_positive_likelihood": "LOW", "file_path": "/home/wiyu/Documents/01. Skripsi/code/SAST_NEO/tests/fixtures/php_vulnerable/ojs_vulnerable.php", "id": "PATTERN-0031", "line_end": 19, "line_start": 19, "metadata": {"matched_pattern": "galley-\u003egetLabel()"}, "name": "CVE-2023-33970 - XSS via galley label", "owasp": "A03:2021", "references": ["https://github.com/pkp/pkp-lib/issues/8866"], "remediation": "Update to OJS 3.3.0-16 or later. Apply htmlspecialchars() to galley label output.\n", "rule_id": "OJS-SC-CVE-001", "severity": "HIGH", "subcategory": "ojs_specific", "taint_path": null}];
+
+        function filterFindings() {
+            const severity = document.getElementById('filterSeverity').value;
+            const category = document.getElementById('filterCategory').value;
+            const search = document.getElementById('filterSearch').value.toLowerCase();
+            const rows = document.querySelectorAll('.finding-row');
+            let visible = 0;
+
+            rows.forEach(row => {
+                const s = row.dataset.severity;
+                const c = row.dataset.category;
+                const text = row.textContent.toLowerCase();
+                const show = (severity === 'all' || s === severity) &&
+                             (category === 'all' || c === category) &&
+                             (search === '' || text.includes(search));
+                row.style.display = show ? '' : 'none';
+                if (show) visible++;
+            });
+
+            document.getElementById('filterCount').textContent =
+                `Showing ${visible} of ${findings.length} findings`;
+        }
+
+        function sortTable(col) {
+            const table = document.getElementById('findingsTable');
+            const tbody = table.querySelector('tbody');
+            const rows = Array.from(tbody.querySelectorAll('tr'));
+            const sevOrder = {CRITICAL: 0, HIGH: 1, MEDIUM: 2, LOW: 3, INFO: 4};
+
+            rows.sort((a, b) => {
+                let av = a.cells[col].textContent.trim();
+                let bv = b.cells[col].textContent.trim();
+                if (col === 0) { av = sevOrder[av] || 5; bv = sevOrder[bv] || 5; }
+                if (col === 5) { av = parseInt(av) || 0; bv = parseInt(bv) || 0; }
+                if (typeof av === 'number') return av - bv;
+                return av.localeCompare(bv);
+            });
+
+            if (table.dataset.sortCol === String(col) && table.dataset.sortDir === 'asc') {
+                rows.reverse();
+                table.dataset.sortDir = 'desc';
+            } else {
+                table.dataset.sortCol = String(col);
+                table.dataset.sortDir = 'asc';
+            }
+
+            rows.forEach(r => tbody.appendChild(r));
+        }
+
+        function showDetail(idx) {
+            const f = findings[idx];
+            document.getElementById('modalTitle').textContent = f.name;
+
+            let html = `
+                <div class="detail-section">
+                    <span class="badge badge-${f.severity}">${f.severity}</span>
+                    <div class="meta-tags" style="margin-top: 12px;">
+                        ${f.cwe ? `<span class="meta-tag">${f.cwe}</span>` : ''}
+                        ${f.owasp ? `<span class="meta-tag">OWASP ${f.owasp}</span>` : ''}
+                        <span class="meta-tag">${f.category}</span>
+                        <span class="meta-tag">${f.rule_id}</span>
+                    </div>
+                </div>
+                <div class="detail-section">
+                    <h4>Description</h4>
+                    <p>${f.description}</p>
+                </div>
+                <div class="detail-section">
+                    <h4>Location</h4>
+                    <p style="font-family: monospace; font-size: 13px;">${f.file_path}:${f.line_start}</p>
+                </div>`;
+
+            if (f.code_snippet) {
+                html += `
+                <div class="detail-section">
+                    <h4>Code</h4>
+                    <div class="code-block">${escapeHtml(f.code_snippet)}</div>
+                </div>`;
+            }
+
+            if (f.taint_path) {
+                const tp = f.taint_path;
+                html += `
+                <div class="detail-section">
+                    <h4>Taint Path</h4>
+                    <div class="taint-path">
+                        <div class="taint-step">Source: ${escapeHtml(tp.source)} (${tp.source_location})</div>`;
+                if (tp.intermediate_steps) {
+                    tp.intermediate_steps.forEach(step => {
+                        html += `<div class="taint-step">${escapeHtml(step)}</div>`;
+                    });
+                }
+                html += `<div class="taint-step">Sink: ${escapeHtml(tp.sink)} (${tp.sink_location})</div>
+                    </div>
+                </div>`;
+            }
+
+            if (f.remediation) {
+                html += `
+                <div class="detail-section">
+                    <h4>Remediation</h4>
+                    <p>${escapeHtml(f.remediation)}</p>
+                </div>`;
+            }
+
+            if (f.cve_references && f.cve_references.length > 0) {
+                html += `
+                <div class="detail-section">
+                    <h4>CVE References</h4>
+                    <div class="meta-tags">${f.cve_references.map(c => `<span class="meta-tag">${c}</span>`).join('')}</div>
+                </div>`;
+            }
+
+            document.getElementById('modalBody').innerHTML = html;
+            document.getElementById('modalOverlay').classList.add('active');
+        }
+
+        function closeModal() {
+            document.getElementById('modalOverlay').classList.remove('active');
+        }
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        document.addEventListener('keydown', e => { if (e.key === 'Escape') closeModal(); });
+    </script>
+</body>
+</html>

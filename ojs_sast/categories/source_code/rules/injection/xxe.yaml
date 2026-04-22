@@ -1,0 +1,77 @@
+rules:
+  - id: "OJS-SC-XXE-001"
+    name: "XML External Entity (XXE) injection"
+    description: >
+      XML parsing is performed without disabling external entity loading,
+      allowing attackers to read arbitrary files or perform SSRF.
+    severity: "HIGH"
+    category: "source_code"
+    subcategory: "injection"
+    cwe: "CWE-611"
+    owasp: "A05:2021"
+    taint_analysis:
+      sources:
+        - "$_POST"
+        - "$_REQUEST"
+        - "file_get_contents"
+        - "fread"
+      sinks:
+        - "simplexml_load_string"
+        - "simplexml_load_file"
+        - "DOMDocument"
+        - "XMLReader"
+      sanitizers: []
+    pattern_match:
+      type: "regex"
+      patterns:
+        - 'simplexml_load_string\s*\(\s*\$'
+        - 'simplexml_load_file\s*\(\s*\$'
+        - 'new\s+DOMDocument.*?loadXML\s*\(\s*\$'
+        - 'XMLReader::open\s*\(\s*\$'
+    remediation: >
+      Disable external entity loading before parsing XML:
+      libxml_disable_entity_loader(true);
+      $dom->loadXML($xml, LIBXML_NOENT | LIBXML_DTDLOAD);
+    references:
+      - "https://cwe.mitre.org/data/definitions/611.html"
+
+  - id: "OJS-SC-XXE-002"
+    name: "XML entity loading not disabled"
+    description: >
+      XML parsing code does not call libxml_disable_entity_loader()
+      or use LIBXML_NOENT flag, leaving it vulnerable to XXE.
+    severity: "MEDIUM"
+    category: "source_code"
+    subcategory: "injection"
+    cwe: "CWE-611"
+    owasp: "A05:2021"
+    pattern_match:
+      type: "regex"
+      patterns:
+        - 'new\s+DOMDocument\s*\('
+        - 'simplexml_load_(string|file)\s*\('
+    remediation: >
+      Always disable external entities before XML parsing.
+      Use LIBXML_NOENT and LIBXML_NONET flags.
+    false_positive_notes: >
+      Check if libxml_disable_entity_loader(true) is called before
+      the XML parsing. If so, this is a false positive.
+
+  - id: "OJS-SC-XXE-003"
+    name: "Unsafe XML parsing in OJS plugin"
+    description: >
+      An OJS plugin parses XML data without proper entity protection,
+      which could be exploited through crafted submission files.
+    severity: "HIGH"
+    category: "source_code"
+    subcategory: "injection"
+    cwe: "CWE-611"
+    owasp: "A05:2021"
+    pattern_match:
+      type: "regex"
+      patterns:
+        - 'class\s+\w+Plugin.*?simplexml_load'
+        - '->importExport.*?DOMDocument'
+    remediation: >
+      Ensure all XML parsing in OJS plugins uses secure defaults.
+      Wrap with libxml_disable_entity_loader(true) and appropriate flags.

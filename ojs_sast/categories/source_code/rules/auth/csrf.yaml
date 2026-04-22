@@ -1,0 +1,56 @@
+rules:
+  - id: "OJS-SC-CSRF-001"
+    name: "Form submission without CSRF token validation"
+    description: >
+      A form processing handler does not validate a CSRF token,
+      allowing cross-site request forgery attacks.
+    severity: "HIGH"
+    category: "source_code"
+    subcategory: "auth"
+    cwe: "CWE-352"
+    owasp: "A01:2021"
+    pattern_match:
+      type: "regex"
+      patterns:
+        - '<form\s+.*?method\s*=\s*["'']post["''](?!.*?csrf|token|csrfToken)'
+        - 'POST.*?(?!.*?csrf_token|csrfToken|validateCSRF)'
+    remediation: >
+      Include a CSRF token in all POST forms and validate it server-side.
+      OJS provides CSRFTokenManager for this purpose.
+
+  - id: "OJS-SC-CSRF-002"
+    name: "State-changing operation via GET request"
+    description: >
+      A GET request handler performs state-changing operations (delete, update)
+      without requiring a POST request with CSRF protection.
+    severity: "MEDIUM"
+    category: "source_code"
+    subcategory: "auth"
+    cwe: "CWE-352"
+    owasp: "A01:2021"
+    pattern_match:
+      type: "regex"
+      patterns:
+        - '\$_(GET)\[.*?\].*?(delete|remove|update|modify|drop|truncate)'
+        - 'GET.*?->(delete|remove|update)\s*\('
+    remediation: >
+      Use POST requests for all state-changing operations.
+      Add CSRF token validation to the handler.
+
+  - id: "OJS-SC-CSRF-003"
+    name: "OJS handler missing CSRF check"
+    description: >
+      An OJS handler method that modifies data does not call
+      the CSRF validation method before processing.
+    severity: "MEDIUM"
+    category: "source_code"
+    subcategory: "auth"
+    cwe: "CWE-352"
+    owasp: "A01:2021"
+    pattern_match:
+      type: "regex"
+      patterns:
+        - 'function\s+(save|delete|update|remove)\w*\s*\(.*?\).*?\{(?!.*?csrf|CSRFToken)'
+    remediation: >
+      Add $this->validate() or CSRF token checking in all handler
+      methods that modify data.

@@ -1,0 +1,60 @@
+rules:
+  - id: "OJS-UF-WS-001"
+    name: "PHP eval webshell detected"
+    description: "Known webshell pattern using eval() with encoded or obfuscated input."
+    severity: "CRITICAL"
+    category: "uploaded_file"
+    subcategory: "webshell"
+    cwe: "CWE-506"
+    owasp: "A03:2021"
+    pattern_match:
+      type: "regex"
+      patterns:
+        - 'eval\s*\(\s*gzinflate\s*\(\s*base64_decode'
+        - 'eval\s*\(\s*str_rot13\s*\('
+        - 'eval\s*\(\s*gzuncompress\s*\('
+        - 'eval\s*\(\s*\$_(GET|POST|REQUEST|COOKIE)\['
+
+  - id: "OJS-UF-WS-002"
+    name: "Known webshell identifier"
+    description: "File contains identifiers associated with known PHP webshells."
+    severity: "CRITICAL"
+    category: "uploaded_file"
+    subcategory: "webshell"
+    cwe: "CWE-506"
+    pattern_match:
+      type: "regex"
+      patterns:
+        - '(c99|r57|c100|b374k|weevely|WSO|FilesMan|p0wny|alfa.shell)'
+        - 'phpspy|phpshell|shell_exec.*?\$_(GET|POST|REQUEST)'
+        - 'preg_replace\s*\(\s*["\'']/.*/e["\''].*?\$_(GET|POST)'
+
+  - id: "OJS-UF-WS-003"
+    name: "Reverse shell pattern"
+    description: "File contains reverse shell connection patterns."
+    severity: "CRITICAL"
+    category: "uploaded_file"
+    subcategory: "webshell"
+    cwe: "CWE-506"
+    pattern_match:
+      type: "regex"
+      patterns:
+        - 'fsockopen\s*\(.*?\d+\.\d+\.\d+\.\d+'
+        - '/bin/(ba)?sh\s*-[ci]'
+        - 'socket_create\s*\(\s*AF_INET'
+        - 'python\s+-c.*?import\s+socket'
+        - 'nc\s+-[a-z]*\s+\d+\.\d+\.\d+\.\d+'
+
+  - id: "OJS-UF-WS-004"
+    name: "Obfuscated PHP code"
+    description: "File contains heavily obfuscated PHP code which is a common webshell technique."
+    severity: "HIGH"
+    category: "uploaded_file"
+    subcategory: "webshell"
+    cwe: "CWE-506"
+    pattern_match:
+      type: "regex"
+      patterns:
+        - '\\x[0-9a-fA-F]{2}(\\x[0-9a-fA-F]{2}){10,}'
+        - 'chr\s*\(\s*\d+\s*\)\s*\.\s*chr\s*\(\s*\d+\s*\)\s*\.\s*chr\s*\(\s*\d+\s*\)'
+        - '\$\w+\s*=\s*str_replace\s*\(.*?\)\s*;\s*\$\w+\s*\('

@@ -1,0 +1,416 @@
+"""Core taint analysis engine for OJS-SAST.
+
+Implements forward data-flow analysis to track tainted data from
+sources through variable assignments to dangerous sinks.
+"""
+
+from dataclasses import dataclass, field
+from typing import Any
+
+from ojs_sast.engine.ast_walker import (
+    find_nodes_by_types,
+    find_variables_in_node,
+    get_assignment_target,
+    get_assignment_value,
+    get_function_arguments,
+    get_function_name,
+    get_line_number,
+    get_node_text,
+    walk_tree,
+)
+from ojs_sast.engine.taint.sanitizers import get_sanitizer_category, is_effective_sanitizer, is_sanitizer
+from ojs_sast.engine.taint.sinks import get_sink_categories, is_taint_sink
+from ojs_sast.engine.taint.sources import get_source_category, is_taint_source
+from ojs_sast.models.finding import Category, Finding, Severity, TaintPath
+from ojs_sast.utils.file_utils import get_code_snippet
+from ojs_sast.utils.logger import logger
+
+
+@dataclass
+class TaintedVariable:
+    """Tracks a tainted variable through data flow."""
+    name: str
+    source: str
+    source_line: int
+    taint_path: list[str] = field(default_factory=list)
+    sanitized_by: str | None = None
+    sanitizer_category: str | None = None
+
+
+class TaintAnalyzer:
+    """Forward data-flow taint analysis engine.
+
+    Algorithm:
+    1. Parse PHP → AST via tree-sitter
+    2. Walk AST to identify taint sources
+    3. Mark variables receiving values from sources as tainted
+    4. Follow data flow through assignments (taint propagation)
+    5. If tainted var passes through sanitizer → record sanitization
+    6. If tainted var reaches a sink → generate Finding with TaintPath
+    """
+
+    def __init__(self, filepath: str, tree: Any, source_bytes: bytes) -> None:
+        self.filepath = filepath
+        self.tree = tree
+        self.source_bytes = source_bytes
+        self.tainted_vars: dict[str, TaintedVariable] = {}
+        self.findings: list[Finding] = []
+        self._finding_counter = 0
+
+    def analyze(self) -> list[Finding]:
+        """Run taint analysis on the parsed PHP file.
+
+        Returns:
+            List of findings from taint analysis.
+        """
+        if self.tree is None:
+            return []
+
+        root = self.tree.root_node
+
+        # Phase 1: Identify initial taint sources
+        self._find_taint_sources(root)
+
+        # Phase 2: Propagate taint through assignments
+        self._propagate_taint(root)
+
+        # Phase 3: Check sinks for tainted data
+        self._check_sinks(root)
+
+        return self.findings
+
+    def _find_taint_sources(self, root: Any) -> None:
+        """Find all taint sources and mark initial tainted variables."""
+        assignment_types = {"assignment_expression", "augmented_assignment_expression"}
+        assignments = find_nodes_by_types(root, assignment_types)
+
+        for node in assignments:
+            target = get_assignment_target(node, self.source_bytes)
+            value_node = node.child_by_field_name("right")
+
+            if not target or not value_node:
+                continue
+
+            value_text = get_node_text(value_node, self.source_bytes)
+
+            if is_taint_source(value_text):
+                source_cat = get_source_category(value_text) or "unknown"
+                line = get_line_number(node)
+
+                # Check if the source is wrapped in a sanitizer
+                sanitized_by = None
+                sanitizer_cat = None
+                if is_sanitizer(value_text):
+                    sanitized_by = value_text
+                    sanitizer_cat = get_sanitizer_category(value_text)
+
+                self.tainted_vars[target] = TaintedVariable(
+                    name=target,
+                    source=value_text,
+                    source_line=line,
+                    taint_path=[f"{target} = {value_text} (line {line})"
+                                + (f" [SANITIZED by {sanitizer_cat}]" if sanitized_by else "")],
+                    sanitized_by=sanitized_by,
+                    sanitizer_category=sanitizer_cat,
+                )
+                logger.debug(
+                    f"Taint source found: {target} = {value_text} "
+                    f"[{source_cat}] at {self.filepath}:{line}"
+                    + (f" (sanitized by {sanitizer_cat})" if sanitized_by else "")
+                )
+
+    def _propagate_taint(self, root: Any) -> None:
+        """Propagate taint through variable assignments and expressions."""
+        assignment_types = {"assignment_expression", "augmented_assignment_expression"}
+        assignments = find_nodes_by_types(root, assignment_types)
+
+        # Multiple passes to handle cascading assignments
+        for _ in range(3):
+            changed = False
+            for node in assignments:
+                target = get_assignment_target(node, self.source_bytes)
+                value_node = node.child_by_field_name("right")
+
+                if not target or not value_node:
+                    continue
+
+                # Skip if target is already tainted from a source
+                if target in self.tainted_vars and self.tainted_vars[target].source_line == get_line_number(node):
+                    continue
+
+                value_text = get_node_text(value_node, self.source_bytes)
+
+                # Check if value contains any tainted variables
+                vars_in_value = find_variables_in_node(value_node, self.source_bytes)
+                for var in vars_in_value:
+                    if var in self.tainted_vars:
+                        tainted_from = self.tainted_vars[var]
+                        line = get_line_number(node)
+
+                        # Check if value passes through a sanitizer
+                        if is_sanitizer(value_text):
+                            san_cat = get_sanitizer_category(value_text)
+                            self.tainted_vars[target] = TaintedVariable(
+                                name=target,
+                                source=tainted_from.source,
+                                source_line=tainted_from.source_line,
+                                taint_path=tainted_from.taint_path + [
+                                    f"{target} = {value_text} (line {line}) [SANITIZED by {san_cat}]"
+                                ],
+                                sanitized_by=value_text,
+                                sanitizer_category=san_cat,
+                            )
+                        else:
+                            self.tainted_vars[target] = TaintedVariable(
+                                name=target,
+                                source=tainted_from.source,
+                                source_line=tainted_from.source_line,
+                                taint_path=tainted_from.taint_path + [
+                                    f"{target} = {value_text} (line {line})"
+                                ],
+                            )
+                        changed = True
+                        break
+
+            if not changed:
+                break
+
+    def _check_sinks(self, root: Any) -> None:
+        """Check if any tainted data reaches dangerous sinks."""
+        call_types = {
+            "function_call_expression",
+            "member_call_expression",
+            "scoped_call_expression",
+        }
+        calls = find_nodes_by_types(root, call_types)
+
+        for node in calls:
+            func_name = get_function_name(node, self.source_bytes)
+            if not func_name:
+                continue
+
+            full_call = get_node_text(node, self.source_bytes)
+
+            if not is_taint_sink(func_name) and not is_taint_sink(full_call):
+                continue
+
+            # Get sink categories
+            sink_cats = get_sink_categories(func_name) or get_sink_categories(full_call)
+
+            # Check if any arguments contain tainted variables
+            args = get_function_arguments(node, self.source_bytes)
+            args_node = node.child_by_field_name("arguments")
+
+            if args_node:
+                arg_vars = find_variables_in_node(args_node, self.source_bytes)
+                for var in arg_vars:
+                    if var in self.tainted_vars:
+                        tainted = self.tainted_vars[var]
+
+                        # Check if sanitization is effective for this sink
+                        if tainted.sanitized_by:
+                            effective = any(
+                                is_effective_sanitizer(tainted.sanitized_by, sc)
+                                for sc in sink_cats
+                            )
+                            if effective:
+                                continue
+
+                        line = get_line_number(node)
+                        self._create_finding(
+                            tainted, func_name, full_call, line, sink_cats
+                        )
+                        break
+
+        # Also check echo/print statements (they're expression_statements)
+        self._check_echo_sinks(root)
+
+    def _check_echo_sinks(self, root: Any) -> None:
+        """Check echo and print statements for tainted data."""
+        echo_nodes = find_nodes_by_types(root, {"echo_statement", "print_intrinsic"})
+
+        for node in echo_nodes:
+            node_text = get_node_text(node, self.source_bytes)
+            vars_in_echo = find_variables_in_node(node, self.source_bytes)
+
+            for var in vars_in_echo:
+                if var in self.tainted_vars:
+                    tainted = self.tainted_vars[var]
+
+                    if tainted.sanitized_by:
+                        if is_effective_sanitizer(tainted.sanitized_by, "xss"):
+                            continue
+
+                    line = get_line_number(node)
+                    self._create_finding(
+                        tainted, "echo/print", node_text.strip(), line, ["xss"]
+                    )
+                    break
+
+    def _create_finding(
+        self,
+        tainted: TaintedVariable,
+        sink_name: str,
+        sink_code: str,
+        sink_line: int,
+        sink_categories: list[str],
+    ) -> None:
+        """Create a Finding from a taint-to-sink flow."""
+        self._finding_counter += 1
+
+        # Map sink category to CWE and OWASP
+        cwe_map = {
+            "sql_injection": ("CWE-89", "A03:2021"),
+            "xss": ("CWE-79", "A03:2021"),
+            "rce": ("CWE-78", "A03:2021"),
+            "file_ops": ("CWE-22", "A01:2021"),
+            "ssrf": ("CWE-918", "A10:2021"),
+            "xxe": ("CWE-611", "A05:2021"),
+            "deserialization": ("CWE-502", "A08:2021"),
+            "header_injection": ("CWE-113", "A03:2021"),
+            "ldap": ("CWE-90", "A03:2021"),
+        }
+
+        primary_cat = sink_categories[0] if sink_categories else "unknown"
+        cwe, owasp = cwe_map.get(primary_cat, ("CWE-20", "A03:2021"))
+
+        # Build subcategory name
+        subcat_map = {
+            "sql_injection": "injection",
+            "xss": "injection",
+            "rce": "injection",
+            "file_ops": "file_ops",
+            "ssrf": "misc",
+            "xxe": "injection",
+            "deserialization": "misc",
+            "header_injection": "injection",
+            "ldap": "injection",
+        }
+        subcategory = subcat_map.get(primary_cat, "misc")
+
+        # Build human-readable name
+        vuln_names = {
+            "sql_injection": "SQL Injection",
+            "xss": "Cross-Site Scripting (XSS)",
+            "rce": "Remote Code Execution",
+            "file_ops": "Path Traversal / File Inclusion",
+            "ssrf": "Server-Side Request Forgery",
+            "xxe": "XML External Entity",
+            "deserialization": "Insecure Deserialization",
+            "header_injection": "HTTP Header Injection",
+            "ldap": "LDAP Injection",
+        }
+        vuln_name = vuln_names.get(primary_cat, primary_cat.replace("_", " ").title())
+
+        taint_path = TaintPath(
+            source=tainted.source,
+            source_location=f"{self.filepath}:{tainted.source_line}",
+            sink=sink_name,
+            sink_location=f"{self.filepath}:{sink_line}",
+            intermediate_steps=tainted.taint_path,
+            sanitized=tainted.sanitized_by is not None,
+        )
+
+        snippet = get_code_snippet(self.filepath, sink_line, context=2)
+
+        finding = Finding(
+            id=f"TAINT-{self._finding_counter:04d}",
+            rule_id=f"OJS-SC-{primary_cat.upper().replace('_', '')}-TAINT",
+            name=f"{vuln_name} via tainted input",
+            description=(
+                f"Data from user input ({tainted.source}) flows into "
+                f"a dangerous function ({sink_name}) without adequate sanitization."
+            ),
+            severity=self._get_severity(primary_cat, tainted.sanitized_by is not None),
+            category=Category.SOURCE_CODE,
+            subcategory=subcategory,
+            file_path=self.filepath,
+            line_start=tainted.source_line,
+            line_end=sink_line,
+            code_snippet=snippet,
+            cwe=cwe,
+            owasp=owasp,
+            taint_path=taint_path,
+            remediation=self._get_remediation(primary_cat),
+        )
+
+        self.findings.append(finding)
+
+    @staticmethod
+    def _get_severity(sink_category: str, is_partially_sanitized: bool) -> Severity:
+        """Determine finding severity based on sink category."""
+        severity_map = {
+            "sql_injection": Severity.CRITICAL,
+            "rce": Severity.CRITICAL,
+            "xxe": Severity.HIGH,
+            "xss": Severity.HIGH,
+            "file_ops": Severity.HIGH,
+            "ssrf": Severity.HIGH,
+            "deserialization": Severity.HIGH,
+            "header_injection": Severity.MEDIUM,
+            "ldap": Severity.HIGH,
+        }
+        severity = severity_map.get(sink_category, Severity.MEDIUM)
+
+        # Downgrade by one level if partially sanitized
+        if is_partially_sanitized:
+            downgrade = {
+                Severity.CRITICAL: Severity.HIGH,
+                Severity.HIGH: Severity.MEDIUM,
+                Severity.MEDIUM: Severity.LOW,
+                Severity.LOW: Severity.INFO,
+                Severity.INFO: Severity.INFO,
+            }
+            severity = downgrade[severity]
+
+        return severity
+
+    @staticmethod
+    def _get_remediation(sink_category: str) -> str:
+        """Get remediation guidance for a sink category."""
+        remediations = {
+            "sql_injection": (
+                "Use prepared statements or parameterized queries. "
+                "If using OJS DAO, use $this->_driver->escapeString() "
+                "or intval() for integer parameters."
+            ),
+            "xss": (
+                "Apply htmlspecialchars($var, ENT_QUOTES, 'UTF-8') before output. "
+                "In OJS Smarty templates, use |escape modifier. "
+                "For rich text, use PKPString::stripUnsafeHtml()."
+            ),
+            "rce": (
+                "Avoid using exec(), system(), or eval() with user input. "
+                "Use escapeshellarg() and escapeshellcmd() if shell execution "
+                "is absolutely necessary."
+            ),
+            "file_ops": (
+                "Use basename() to strip directory components. "
+                "Validate paths with realpath() and ensure they're within "
+                "the expected directory. Never use user input in include/require."
+            ),
+            "ssrf": (
+                "Validate and whitelist allowed URLs/hosts. "
+                "Block internal/private IP ranges. "
+                "Use a URL parser to enforce allowed schemes (http/https only)."
+            ),
+            "xxe": (
+                "Disable external entity loading: "
+                "libxml_disable_entity_loader(true) and use LIBXML_NOENT flag."
+            ),
+            "deserialization": (
+                "Avoid unserialize() with user input. "
+                "Use json_decode() instead. If unserialize is required, "
+                "use allowed_classes option (PHP 7+)."
+            ),
+            "header_injection": (
+                "Validate and sanitize header values. "
+                "Remove newline characters (\\r\\n) from user input "
+                "before passing to header() or setcookie()."
+            ),
+            "ldap": (
+                "Use ldap_escape() (PHP 5.6+) to sanitize user input "
+                "before LDAP queries."
+            ),
+        }
+        return remediations.get(sink_category, "Review and sanitize user input before use.")

@@ -1,0 +1,68 @@
+rules:
+  - id: "OJS-UF-DP-001"
+    name: "eval() or assert() in uploaded file"
+    description: "Uploaded file contains eval() or assert() which can execute arbitrary code."
+    severity: "CRITICAL"
+    category: "uploaded_file"
+    subcategory: "dangerous_patterns"
+    cwe: "CWE-94"
+    owasp: "A03:2021"
+    pattern_match:
+      type: "regex"
+      patterns:
+        - '\b(eval|assert)\s*\('
+        - 'create_function\s*\('
+
+  - id: "OJS-UF-DP-002"
+    name: "base64_decode execution pattern"
+    description: "File contains base64_decode combined with eval or other execution functions."
+    severity: "CRITICAL"
+    category: "uploaded_file"
+    subcategory: "dangerous_patterns"
+    cwe: "CWE-94"
+    pattern_match:
+      type: "regex"
+      patterns:
+        - '(eval|assert|exec|system)\s*\(\s*base64_decode\s*\('
+        - 'base64_decode\s*\(.*?\)\s*\)'
+
+  - id: "OJS-UF-DP-003"
+    name: "Shell command execution in uploaded file"
+    description: "File contains shell command execution functions."
+    severity: "CRITICAL"
+    category: "uploaded_file"
+    subcategory: "dangerous_patterns"
+    cwe: "CWE-78"
+    pattern_match:
+      type: "regex"
+      patterns:
+        - '\b(exec|system|passthru|shell_exec|popen|proc_open)\s*\('
+        - '`[^`]*\$'
+
+  - id: "OJS-UF-DP-004"
+    name: "File manipulation functions in uploaded file"
+    description: "File contains functions that read/write other files on the server."
+    severity: "HIGH"
+    category: "uploaded_file"
+    subcategory: "dangerous_patterns"
+    cwe: "CWE-73"
+    pattern_match:
+      type: "regex"
+      patterns:
+        - '\b(file_put_contents|fwrite|fputs)\s*\('
+        - '\b(chmod|chown|chgrp)\s*\('
+        - '\b(mkdir|rmdir|unlink)\s*\('
+
+  - id: "OJS-UF-DP-005"
+    name: "Network/socket operations in uploaded file"
+    description: "File contains network socket operations that could establish reverse shells."
+    severity: "CRITICAL"
+    category: "uploaded_file"
+    subcategory: "dangerous_patterns"
+    cwe: "CWE-506"
+    pattern_match:
+      type: "regex"
+      patterns:
+        - '\b(fsockopen|socket_create|socket_connect)\s*\('
+        - '\bcurl_exec\s*\('
+        - 'stream_socket_client\s*\('

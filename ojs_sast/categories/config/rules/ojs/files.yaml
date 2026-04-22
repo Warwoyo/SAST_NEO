@@ -1,0 +1,42 @@
+checks:
+  - id: "OJS-CFG-FILES-001"
+    name: "Files directory inside web root"
+    description: "The files_dir is located inside the web server document root, making uploaded files potentially accessible."
+    severity: "HIGH"
+    category: "config"
+    subcategory: "ojs"
+    cwe: "CWE-552"
+    owasp: "A01:2021"
+    pattern_match:
+      type: "regex"
+      patterns:
+        - 'files_dir\s*=\s*(\./|public|www|htdocs|html)'
+    remediation: "Move files_dir to a location OUTSIDE the web server document root."
+
+  - id: "OJS-CFG-FILES-002"
+    name: "Upload file size limit too large"
+    description: "The upload file size limit is set excessively large, increasing risk of DoS or malicious uploads."
+    severity: "MEDIUM"
+    category: "config"
+    subcategory: "ojs"
+    cwe: "CWE-770"
+    owasp: "A05:2021"
+    pattern_match:
+      type: "regex"
+      patterns:
+        - 'upload_max_filesize\s*=\s*(\d{3,})'
+    remediation: "Set reasonable upload size limits appropriate for academic documents (e.g., 20MB)."
+
+  - id: "OJS-CFG-FILES-003"
+    name: "Public files directory configuration"
+    description: "The public_files_dir may contain uploaded files accessible via web with dangerous extensions."
+    severity: "MEDIUM"
+    category: "config"
+    subcategory: "ojs"
+    cwe: "CWE-434"
+    owasp: "A04:2021"
+    pattern_match:
+      type: "regex"
+      patterns:
+        - 'public_files_dir\s*=\s*\S+'
+    remediation: "Ensure public_files_dir has web server rules to prevent PHP execution."

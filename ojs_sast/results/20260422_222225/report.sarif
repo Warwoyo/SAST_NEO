@@ -1,0 +1,2071 @@
+{
+  "$schema": "https://raw.githubusercontent.com/oasis-tcs/sarif-spec/main/sarif-2.1/schema/sarif-schema-2.1.0.json",
+  "version": "2.1.0",
+  "runs": [
+    {
+      "tool": {
+        "driver": {
+          "name": "OJS-SAST",
+          "version": "1.0.0",
+          "informationUri": "https://github.com/ojs-sast/ojs-sast",
+          "rules": [
+            {
+              "id": "OJS-SC-SQLINJECTION-TAINT",
+              "name": "SQL Injection via tainted input",
+              "shortDescription": {
+                "text": "SQL Injection via tainted input"
+              },
+              "fullDescription": {
+                "text": "Data from user input ($_GET['id']) flows into a dangerous function (retrieve) without adequate sanitization."
+              },
+              "defaultConfiguration": {
+                "level": "error"
+              },
+              "helpUri": "",
+              "properties": {
+                "tags": [
+                  "CWE-89",
+                  "A03:2021"
+                ]
+              }
+            },
+            {
+              "id": "OJS-SC-RCE-TAINT",
+              "name": "Remote Code Execution via tainted input",
+              "shortDescription": {
+                "text": "Remote Code Execution via tainted input"
+              },
+              "fullDescription": {
+                "text": "Data from user input ($_REQUEST['filename']) flows into a dangerous function (exec) without adequate sanitization."
+              },
+              "defaultConfiguration": {
+                "level": "error"
+              },
+              "helpUri": "",
+              "properties": {
+                "tags": [
+                  "CWE-78",
+                  "A03:2021"
+                ]
+              }
+            },
+            {
+              "id": "OJS-SC-DESERIALIZATION-TAINT",
+              "name": "Insecure Deserialization via tainted input",
+              "shortDescription": {
+                "text": "Insecure Deserialization via tainted input"
+              },
+              "fullDescription": {
+                "text": "Data from user input ($_COOKIE['session_data']) flows into a dangerous function (unserialize) without adequate sanitization."
+              },
+              "defaultConfiguration": {
+                "level": "error"
+              },
+              "helpUri": "",
+              "properties": {
+                "tags": [
+                  "CWE-502",
+                  "A08:2021"
+                ]
+              }
+            },
+            {
+              "id": "OJS-SC-SSRF-TAINT",
+              "name": "Server-Side Request Forgery via tainted input",
+              "shortDescription": {
+                "text": "Server-Side Request Forgery via tainted input"
+              },
+              "fullDescription": {
+                "text": "Data from user input ($_GET['url']) flows into a dangerous function (file_get_contents) without adequate sanitization."
+              },
+              "defaultConfiguration": {
+                "level": "error"
+              },
+              "helpUri": "",
+              "properties": {
+                "tags": [
+                  "CWE-918",
+                  "A10:2021"
+                ]
+              }
+            },
+            {
+              "id": "OJS-SC-XSS-TAINT",
+              "name": "Cross-Site Scripting (XSS) via tainted input",
+              "shortDescription": {
+                "text": "Cross-Site Scripting (XSS) via tainted input"
+              },
+              "fullDescription": {
+                "text": "Data from user input ($_POST['name']) flows into a dangerous function (echo/print) without adequate sanitization."
+              },
+              "defaultConfiguration": {
+                "level": "error"
+              },
+              "helpUri": "",
+              "properties": {
+                "tags": [
+                  "CWE-79",
+                  "A03:2021"
+                ]
+              }
+            },
+            {
+              "id": "OJS-SC-RCE-001",
+              "name": "Remote Code Execution via eval with user input",
+              "shortDescription": {
+                "text": "Remote Code Execution via eval with user input"
+              },
+              "fullDescription": {
+                "text": "The eval() function executes arbitrary PHP code. If it receives user-controlled input, an attacker can execute arbitrary commands.\n"
+              },
+              "defaultConfiguration": {
+                "level": "error"
+              },
+              "helpUri": "https://cwe.mitre.org/data/definitions/94.html",
+              "properties": {
+                "tags": [
+                  "CWE-94",
+                  "A03:2021"
+                ]
+              }
+            },
+            {
+              "id": "OJS-SC-RCE-002",
+              "name": "Command Injection via shell execution functions",
+              "shortDescription": {
+                "text": "Command Injection via shell execution functions"
+              },
+              "fullDescription": {
+                "text": "Shell execution functions (exec, system, shell_exec, passthru, popen) receive user-controlled input, enabling OS command injection.\n"
+              },
+              "defaultConfiguration": {
+                "level": "error"
+              },
+              "helpUri": "",
+              "properties": {
+                "tags": [
+                  "CWE-78",
+                  "A03:2021"
+                ]
+              }
+            },
+            {
+              "id": "OJS-SC-RCE-003",
+              "name": "Code execution via preg_replace with /e modifier",
+              "shortDescription": {
+                "text": "Code execution via preg_replace with /e modifier"
+              },
+              "fullDescription": {
+                "text": "The preg_replace() function with the /e modifier evaluates the replacement string as PHP code. This is deprecated and dangerous.\n"
+              },
+              "defaultConfiguration": {
+                "level": "error"
+              },
+              "helpUri": "",
+              "properties": {
+                "tags": [
+                  "CWE-94",
+                  "A03:2021"
+                ]
+              }
+            },
+            {
+              "id": "OJS-SC-SQLI-002",
+              "name": "SQL Injection via string concatenation in query",
+              "shortDescription": {
+                "text": "SQL Injection via string concatenation in query"
+              },
+              "fullDescription": {
+                "text": "A SQL query is built using string concatenation with variables that may contain user input, creating a SQL injection vulnerability.\n"
+              },
+              "defaultConfiguration": {
+                "level": "error"
+              },
+              "helpUri": "https://cwe.mitre.org/data/definitions/89.html",
+              "properties": {
+                "tags": [
+                  "CWE-89",
+                  "A03:2021"
+                ]
+              }
+            },
+            {
+              "id": "OJS-SC-SQLI-003",
+              "name": "SQL Injection in OJS DAO retrieve method",
+              "shortDescription": {
+                "text": "SQL Injection in OJS DAO retrieve method"
+              },
+              "fullDescription": {
+                "text": "The OJS DAO retrieve() method is called with interpolated variables, which may allow SQL injection if the variables are not properly sanitized.\n"
+              },
+              "defaultConfiguration": {
+                "level": "error"
+              },
+              "helpUri": "",
+              "properties": {
+                "tags": [
+                  "CWE-89",
+                  "A03:2021"
+                ]
+              }
+            },
+            {
+              "id": "OJS-SC-XSS-001",
+              "name": "Reflected XSS via direct output of user input",
+              "shortDescription": {
+                "text": "Reflected XSS via direct output of user input"
+              },
+              "fullDescription": {
+                "text": "User input from superglobals is directly echoed to the browser without HTML encoding, allowing reflected XSS attacks.\n"
+              },
+              "defaultConfiguration": {
+                "level": "error"
+              },
+              "helpUri": "https://cwe.mitre.org/data/definitions/79.html",
+              "properties": {
+                "tags": [
+                  "CWE-79",
+                  "A03:2021"
+                ]
+              }
+            },
+            {
+              "id": "OJS-SC-DESER-001",
+              "name": "Insecure deserialization with user input",
+              "shortDescription": {
+                "text": "Insecure deserialization with user input"
+              },
+              "fullDescription": {
+                "text": "unserialize() is called with data that may originate from user input, allowing object injection attacks.\n"
+              },
+              "defaultConfiguration": {
+                "level": "error"
+              },
+              "helpUri": "",
+              "properties": {
+                "tags": [
+                  "CWE-502",
+                  "A08:2021"
+                ]
+              }
+            },
+            {
+              "id": "OJS-SC-DEBUG-001",
+              "name": "Debug function left in production code",
+              "shortDescription": {
+                "text": "Debug function left in production code"
+              },
+              "fullDescription": {
+                "text": "Debug functions (var_dump, print_r, debug_backtrace) are present in production code, potentially leaking sensitive information.\n"
+              },
+              "defaultConfiguration": {
+                "level": "warning"
+              },
+              "helpUri": "",
+              "properties": {
+                "tags": [
+                  "CWE-215",
+                  "A05:2021"
+                ]
+              }
+            },
+            {
+              "id": "OJS-SC-DEBUG-003",
+              "name": "phpinfo() exposed",
+              "shortDescription": {
+                "text": "phpinfo() exposed"
+              },
+              "fullDescription": {
+                "text": "phpinfo() is called in the codebase, potentially exposing server configuration details to attackers.\n"
+              },
+              "defaultConfiguration": {
+                "level": "error"
+              },
+              "helpUri": "",
+              "properties": {
+                "tags": [
+                  "CWE-200",
+                  "A05:2021"
+                ]
+              }
+            },
+            {
+              "id": "OJS-SC-PT-001",
+              "name": "Path traversal in file operations",
+              "shortDescription": {
+                "text": "Path traversal in file operations"
+              },
+              "fullDescription": {
+                "text": "User input containing path traversal sequences (../) is used in file operations, allowing access to arbitrary files.\n"
+              },
+              "defaultConfiguration": {
+                "level": "error"
+              },
+              "helpUri": "https://cwe.mitre.org/data/definitions/22.html",
+              "properties": {
+                "tags": [
+                  "CWE-22",
+                  "A01:2021"
+                ]
+              }
+            },
+            {
+              "id": "OJS-SC-HASH-001",
+              "name": "Weak hash algorithm for password storage",
+              "shortDescription": {
+                "text": "Weak hash algorithm for password storage"
+              },
+              "fullDescription": {
+                "text": "md5() or sha1() is used for password hashing, which is computationally fast and vulnerable to brute-force attacks.\n"
+              },
+              "defaultConfiguration": {
+                "level": "error"
+              },
+              "helpUri": "",
+              "properties": {
+                "tags": [
+                  "CWE-328",
+                  "A02:2021"
+                ]
+              }
+            },
+            {
+              "id": "OJS-SC-HASH-002",
+              "name": "MD5 used for security-sensitive operation",
+              "shortDescription": {
+                "text": "MD5 used for security-sensitive operation"
+              },
+              "fullDescription": {
+                "text": "md5() is used for generating tokens, signatures, or other security-sensitive values where collision resistance matters.\n"
+              },
+              "defaultConfiguration": {
+                "level": "warning"
+              },
+              "helpUri": "",
+              "properties": {
+                "tags": [
+                  "CWE-328",
+                  "A02:2021"
+                ]
+              }
+            },
+            {
+              "id": "OJS-SC-HASH-003",
+              "name": "Unsalted hash usage",
+              "shortDescription": {
+                "text": "Unsalted hash usage"
+              },
+              "fullDescription": {
+                "text": "A hash function is used without a salt, making it vulnerable to rainbow table attacks.\n"
+              },
+              "defaultConfiguration": {
+                "level": "warning"
+              },
+              "helpUri": "",
+              "properties": {
+                "tags": [
+                  "CWE-916",
+                  "A02:2021"
+                ]
+              }
+            },
+            {
+              "id": "OJS-SC-RAND-001",
+              "name": "Insecure randomness for security tokens",
+              "shortDescription": {
+                "text": "Insecure randomness for security tokens"
+              },
+              "fullDescription": {
+                "text": "rand() or mt_rand() is used for generating security tokens, which are predictable and not cryptographically secure.\n"
+              },
+              "defaultConfiguration": {
+                "level": "error"
+              },
+              "helpUri": "",
+              "properties": {
+                "tags": [
+                  "CWE-330",
+                  "A02:2021"
+                ]
+              }
+            },
+            {
+              "id": "OJS-SC-AUTH-002",
+              "name": "Weak token generation for password reset",
+              "shortDescription": {
+                "text": "Weak token generation for password reset"
+              },
+              "fullDescription": {
+                "text": "Password reset tokens are generated using weak randomness (rand(), mt_rand(), uniqid()) instead of cryptographically secure methods.\n"
+              },
+              "defaultConfiguration": {
+                "level": "error"
+              },
+              "helpUri": "",
+              "properties": {
+                "tags": [
+                  "CWE-330",
+                  "A02:2021"
+                ]
+              }
+            },
+            {
+              "id": "OJS-SC-AUTH-003",
+              "name": "Hardcoded authentication credentials",
+              "shortDescription": {
+                "text": "Hardcoded authentication credentials"
+              },
+              "fullDescription": {
+                "text": "Authentication credentials are hardcoded in the source code, which could be exposed through source code leaks.\n"
+              },
+              "defaultConfiguration": {
+                "level": "error"
+              },
+              "helpUri": "",
+              "properties": {
+                "tags": [
+                  "CWE-798",
+                  "A07:2021"
+                ]
+              }
+            },
+            {
+              "id": "OJS-SC-CSRF-001",
+              "name": "Form submission without CSRF token validation",
+              "shortDescription": {
+                "text": "Form submission without CSRF token validation"
+              },
+              "fullDescription": {
+                "text": "A form processing handler does not validate a CSRF token, allowing cross-site request forgery attacks.\n"
+              },
+              "defaultConfiguration": {
+                "level": "error"
+              },
+              "helpUri": "",
+              "properties": {
+                "tags": [
+                  "CWE-352",
+                  "A01:2021"
+                ]
+              }
+            },
+            {
+              "id": "OJS-SC-CVE-001",
+              "name": "CVE-2023-33970 - XSS via galley label",
+              "shortDescription": {
+                "text": "CVE-2023-33970 - XSS via galley label"
+              },
+              "fullDescription": {
+                "text": "OJS versions before 3.3.0-16 are vulnerable to stored XSS through the galley label field. An authenticated user can inject JavaScript via a crafted galley label.\n"
+              },
+              "defaultConfiguration": {
+                "level": "error"
+              },
+              "helpUri": "https://github.com/pkp/pkp-lib/issues/8866",
+              "properties": {
+                "tags": [
+                  "CWE-79",
+                  "A03:2021"
+                ]
+              }
+            }
+          ]
+        }
+      },
+      "results": [
+        {
+          "ruleId": "OJS-SC-SQLINJECTION-TAINT",
+          "level": "error",
+          "message": {
+            "text": "Data from user input ($_GET['id']) flows into a dangerous function (retrieve) without adequate sanitization."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "/home/wiyu/Documents/01. Skripsi/code/SAST_NEO/tests/fixtures/php_vulnerable/vulnerable.php"
+                },
+                "region": {
+                  "startLine": 3,
+                  "endLine": 4,
+                  "snippet": {
+                    "text": "       2 | // VULNERABLE: SQL Injection via $_GET in raw query\n       3 | $id = $_GET['id'];\n>>>    4 | $result = $this->retrieve(\"SELECT * FROM submissions WHERE id = \" . $id);\n       5 | \n       6 | // VULNERABLE: XSS via direct echo of user input"
+                  }
+                }
+              }
+            }
+          ],
+          "codeFlows": [
+            {
+              "threadFlows": [
+                {
+                  "locations": [
+                    {
+                      "location": {
+                        "message": {
+                          "text": "Source: $_GET['id']"
+                        },
+                        "physicalLocation": {
+                          "artifactLocation": {
+                            "uri": "/home/wiyu/Documents/01. Skripsi/code/SAST_NEO/tests/fixtures/php_vulnerable/vulnerable.php"
+                          },
+                          "region": {
+                            "startLine": 3
+                          }
+                        }
+                      }
+                    },
+                    {
+                      "location": {
+                        "message": {
+                          "text": "$id = $_GET['id'] (line 3)"
+                        },
+                        "physicalLocation": {
+                          "artifactLocation": {
+                            "uri": "/home/wiyu/Documents/01. Skripsi/code/SAST_NEO/tests/fixtures/php_vulnerable/vulnerable.php"
+                          }
+                        }
+                      }
+                    },
+                    {
+                      "location": {
+                        "message": {
+                          "text": "Sink: retrieve"
+                        },
+                        "physicalLocation": {
+                          "artifactLocation": {
+                            "uri": "/home/wiyu/Documents/01. Skripsi/code/SAST_NEO/tests/fixtures/php_vulnerable/vulnerable.php"
+                          },
+                          "region": {
+                            "startLine": 4
+                          }
+                        }
+                      }
+                    }
+                  ]
+                }
+              ]
+            }
+          ],
+          "fixes": [
+            {
+              "description": {
+                "text": "Use prepared statements or parameterized queries. If using OJS DAO, use $this->_driver->escapeString() or intval() for integer parameters."
+              }
+            }
+          ]
+        },
+        {
+          "ruleId": "OJS-SC-RCE-TAINT",
+          "level": "error",
+          "message": {
+            "text": "Data from user input ($_REQUEST['filename']) flows into a dangerous function (exec) without adequate sanitization."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "/home/wiyu/Documents/01. Skripsi/code/SAST_NEO/tests/fixtures/php_vulnerable/vulnerable.php"
+                },
+                "region": {
+                  "startLine": 11,
+                  "endLine": 12,
+                  "snippet": {
+                    "text": "      10 | // VULNERABLE: Command injection via exec\n      11 | $file = $_REQUEST['filename'];\n>>>   12 | exec(\"cat \" . $file);\n      13 | \n      14 | // VULNERABLE: eval with user input"
+                  }
+                }
+              }
+            }
+          ],
+          "codeFlows": [
+            {
+              "threadFlows": [
+                {
+                  "locations": [
+                    {
+                      "location": {
+                        "message": {
+                          "text": "Source: $_REQUEST['filename']"
+                        },
+                        "physicalLocation": {
+                          "artifactLocation": {
+                            "uri": "/home/wiyu/Documents/01. Skripsi/code/SAST_NEO/tests/fixtures/php_vulnerable/vulnerable.php"
+                          },
+                          "region": {
+                            "startLine": 11
+                          }
+                        }
+                      }
+                    },
+                    {
+                      "location": {
+                        "message": {
+                          "text": "$file = $_REQUEST['filename'] (line 11)"
+                        },
+                        "physicalLocation": {
+                          "artifactLocation": {
+                            "uri": "/home/wiyu/Documents/01. Skripsi/code/SAST_NEO/tests/fixtures/php_vulnerable/vulnerable.php"
+                          }
+                        }
+                      }
+                    },
+                    {
+                      "location": {
+                        "message": {
+                          "text": "Sink: exec"
+                        },
+                        "physicalLocation": {
+                          "artifactLocation": {
+                            "uri": "/home/wiyu/Documents/01. Skripsi/code/SAST_NEO/tests/fixtures/php_vulnerable/vulnerable.php"
+                          },
+                          "region": {
+                            "startLine": 12
+                          }
+                        }
+                      }
+                    }
+                  ]
+                }
+              ]
+            }
+          ],
+          "fixes": [
+            {
+              "description": {
+                "text": "Avoid using exec(), system(), or eval() with user input. Use escapeshellarg() and escapeshellcmd() if shell execution is absolutely necessary."
+              }
+            }
+          ]
+        },
+        {
+          "ruleId": "OJS-SC-RCE-TAINT",
+          "level": "error",
+          "message": {
+            "text": "Data from user input ($_GET['code']) flows into a dangerous function (eval) without adequate sanitization."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "/home/wiyu/Documents/01. Skripsi/code/SAST_NEO/tests/fixtures/php_vulnerable/vulnerable.php"
+                },
+                "region": {
+                  "startLine": 15,
+                  "endLine": 16,
+                  "snippet": {
+                    "text": "      14 | // VULNERABLE: eval with user input\n      15 | $code = $_GET['code'];\n>>>   16 | eval($code);\n      17 | \n      18 | // VULNERABLE: File inclusion with user input"
+                  }
+                }
+              }
+            }
+          ],
+          "codeFlows": [
+            {
+              "threadFlows": [
+                {
+                  "locations": [
+                    {
+                      "location": {
+                        "message": {
+                          "text": "Source: $_GET['code']"
+                        },
+                        "physicalLocation": {
+                          "artifactLocation": {
+                            "uri": "/home/wiyu/Documents/01. Skripsi/code/SAST_NEO/tests/fixtures/php_vulnerable/vulnerable.php"
+                          },
+                          "region": {
+                            "startLine": 15
+                          }
+                        }
+                      }
+                    },
+                    {
+                      "location": {
+                        "message": {
+                          "text": "$code = $_GET['code'] (line 15)"
+                        },
+                        "physicalLocation": {
+                          "artifactLocation": {
+                            "uri": "/home/wiyu/Documents/01. Skripsi/code/SAST_NEO/tests/fixtures/php_vulnerable/vulnerable.php"
+                          }
+                        }
+                      }
+                    },
+                    {
+                      "location": {
+                        "message": {
+                          "text": "Sink: eval"
+                        },
+                        "physicalLocation": {
+                          "artifactLocation": {
+                            "uri": "/home/wiyu/Documents/01. Skripsi/code/SAST_NEO/tests/fixtures/php_vulnerable/vulnerable.php"
+                          },
+                          "region": {
+                            "startLine": 16
+                          }
+                        }
+                      }
+                    }
+                  ]
+                }
+              ]
+            }
+          ],
+          "fixes": [
+            {
+              "description": {
+                "text": "Avoid using exec(), system(), or eval() with user input. Use escapeshellarg() and escapeshellcmd() if shell execution is absolutely necessary."
+              }
+            }
+          ]
+        },
+        {
+          "ruleId": "OJS-SC-DESERIALIZATION-TAINT",
+          "level": "error",
+          "message": {
+            "text": "Data from user input ($_COOKIE['session_data']) flows into a dangerous function (unserialize) without adequate sanitization."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "/home/wiyu/Documents/01. Skripsi/code/SAST_NEO/tests/fixtures/php_vulnerable/vulnerable.php"
+                },
+                "region": {
+                  "startLine": 23,
+                  "endLine": 24,
+                  "snippet": {
+                    "text": "      22 | // VULNERABLE: Unserialize user input\n      23 | $data = $_COOKIE['session_data'];\n>>>   24 | $obj = unserialize($data);\n      25 | \n      26 | // VULNERABLE: SSRF via file_get_contents"
+                  }
+                }
+              }
+            }
+          ],
+          "codeFlows": [
+            {
+              "threadFlows": [
+                {
+                  "locations": [
+                    {
+                      "location": {
+                        "message": {
+                          "text": "Source: $_COOKIE['session_data']"
+                        },
+                        "physicalLocation": {
+                          "artifactLocation": {
+                            "uri": "/home/wiyu/Documents/01. Skripsi/code/SAST_NEO/tests/fixtures/php_vulnerable/vulnerable.php"
+                          },
+                          "region": {
+                            "startLine": 23
+                          }
+                        }
+                      }
+                    },
+                    {
+                      "location": {
+                        "message": {
+                          "text": "$data = $_COOKIE['session_data'] (line 23)"
+                        },
+                        "physicalLocation": {
+                          "artifactLocation": {
+                            "uri": "/home/wiyu/Documents/01. Skripsi/code/SAST_NEO/tests/fixtures/php_vulnerable/vulnerable.php"
+                          }
+                        }
+                      }
+                    },
+                    {
+                      "location": {
+                        "message": {
+                          "text": "Sink: unserialize"
+                        },
+                        "physicalLocation": {
+                          "artifactLocation": {
+                            "uri": "/home/wiyu/Documents/01. Skripsi/code/SAST_NEO/tests/fixtures/php_vulnerable/vulnerable.php"
+                          },
+                          "region": {
+                            "startLine": 24
+                          }
+                        }
+                      }
+                    }
+                  ]
+                }
+              ]
+            }
+          ],
+          "fixes": [
+            {
+              "description": {
+                "text": "Avoid unserialize() with user input. Use json_decode() instead. If unserialize is required, use allowed_classes option (PHP 7+)."
+              }
+            }
+          ]
+        },
+        {
+          "ruleId": "OJS-SC-SSRF-TAINT",
+          "level": "error",
+          "message": {
+            "text": "Data from user input ($_GET['url']) flows into a dangerous function (file_get_contents) without adequate sanitization."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "/home/wiyu/Documents/01. Skripsi/code/SAST_NEO/tests/fixtures/php_vulnerable/vulnerable.php"
+                },
+                "region": {
+                  "startLine": 27,
+                  "endLine": 28,
+                  "snippet": {
+                    "text": "      26 | // VULNERABLE: SSRF via file_get_contents\n      27 | $url = $_GET['url'];\n>>>   28 | $content = file_get_contents($url);\n      29 | \n      30 | // VULNERABLE: Weak password hash"
+                  }
+                }
+              }
+            }
+          ],
+          "codeFlows": [
+            {
+              "threadFlows": [
+                {
+                  "locations": [
+                    {
+                      "location": {
+                        "message": {
+                          "text": "Source: $_GET['url']"
+                        },
+                        "physicalLocation": {
+                          "artifactLocation": {
+                            "uri": "/home/wiyu/Documents/01. Skripsi/code/SAST_NEO/tests/fixtures/php_vulnerable/vulnerable.php"
+                          },
+                          "region": {
+                            "startLine": 27
+                          }
+                        }
+                      }
+                    },
+                    {
+                      "location": {
+                        "message": {
+                          "text": "$url = $_GET['url'] (line 27)"
+                        },
+                        "physicalLocation": {
+                          "artifactLocation": {
+                            "uri": "/home/wiyu/Documents/01. Skripsi/code/SAST_NEO/tests/fixtures/php_vulnerable/vulnerable.php"
+                          }
+                        }
+                      }
+                    },
+                    {
+                      "location": {
+                        "message": {
+                          "text": "Sink: file_get_contents"
+                        },
+                        "physicalLocation": {
+                          "artifactLocation": {
+                            "uri": "/home/wiyu/Documents/01. Skripsi/code/SAST_NEO/tests/fixtures/php_vulnerable/vulnerable.php"
+                          },
+                          "region": {
+                            "startLine": 28
+                          }
+                        }
+                      }
+                    }
+                  ]
+                }
+              ]
+            }
+          ],
+          "fixes": [
+            {
+              "description": {
+                "text": "Validate and whitelist allowed URLs/hosts. Block internal/private IP ranges. Use a URL parser to enforce allowed schemes (http/https only)."
+              }
+            }
+          ]
+        },
+        {
+          "ruleId": "OJS-SC-XSS-TAINT",
+          "level": "error",
+          "message": {
+            "text": "Data from user input ($_POST['name']) flows into a dangerous function (echo/print) without adequate sanitization."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "/home/wiyu/Documents/01. Skripsi/code/SAST_NEO/tests/fixtures/php_vulnerable/vulnerable.php"
+                },
+                "region": {
+                  "startLine": 7,
+                  "endLine": 8,
+                  "snippet": {
+                    "text": "       6 | // VULNERABLE: XSS via direct echo of user input\n       7 | $name = $_POST['name'];\n>>>    8 | echo \"Hello, \" . $name;\n       9 | \n      10 | // VULNERABLE: Command injection via exec"
+                  }
+                }
+              }
+            }
+          ],
+          "codeFlows": [
+            {
+              "threadFlows": [
+                {
+                  "locations": [
+                    {
+                      "location": {
+                        "message": {
+                          "text": "Source: $_POST['name']"
+                        },
+                        "physicalLocation": {
+                          "artifactLocation": {
+                            "uri": "/home/wiyu/Documents/01. Skripsi/code/SAST_NEO/tests/fixtures/php_vulnerable/vulnerable.php"
+                          },
+                          "region": {
+                            "startLine": 7
+                          }
+                        }
+                      }
+                    },
+                    {
+                      "location": {
+                        "message": {
+                          "text": "$name = $_POST['name'] (line 7)"
+                        },
+                        "physicalLocation": {
+                          "artifactLocation": {
+                            "uri": "/home/wiyu/Documents/01. Skripsi/code/SAST_NEO/tests/fixtures/php_vulnerable/vulnerable.php"
+                          }
+                        }
+                      }
+                    },
+                    {
+                      "location": {
+                        "message": {
+                          "text": "Sink: echo/print"
+                        },
+                        "physicalLocation": {
+                          "artifactLocation": {
+                            "uri": "/home/wiyu/Documents/01. Skripsi/code/SAST_NEO/tests/fixtures/php_vulnerable/vulnerable.php"
+                          },
+                          "region": {
+                            "startLine": 8
+                          }
+                        }
+                      }
+                    }
+                  ]
+                }
+              ]
+            }
+          ],
+          "fixes": [
+            {
+              "description": {
+                "text": "Apply htmlspecialchars($var, ENT_QUOTES, 'UTF-8') before output. In OJS Smarty templates, use |escape modifier. For rich text, use PKPString::stripUnsafeHtml()."
+              }
+            }
+          ]
+        },
+        {
+          "ruleId": "OJS-SC-RCE-001",
+          "level": "error",
+          "message": {
+            "text": "The eval() function executes arbitrary PHP code. If it receives user-controlled input, an attacker can execute arbitrary commands.\n"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "/home/wiyu/Documents/01. Skripsi/code/SAST_NEO/tests/fixtures/php_vulnerable/vulnerable.php"
+                },
+                "region": {
+                  "startLine": 16,
+                  "endLine": 16,
+                  "snippet": {
+                    "text": "      14 | // VULNERABLE: eval with user input\n      15 | $code = $_GET['code'];\n>>>   16 | eval($code);\n      17 | \n      18 | // VULNERABLE: File inclusion with user input"
+                  }
+                }
+              }
+            }
+          ],
+          "fixes": [
+            {
+              "description": {
+                "text": "Remove eval() usage entirely. There is almost never a valid reason to use eval() in production code. Use proper control flow instead.\n"
+              }
+            }
+          ]
+        },
+        {
+          "ruleId": "OJS-SC-RCE-002",
+          "level": "error",
+          "message": {
+            "text": "Shell execution functions (exec, system, shell_exec, passthru, popen) receive user-controlled input, enabling OS command injection.\n"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "/home/wiyu/Documents/01. Skripsi/code/SAST_NEO/tests/fixtures/php_vulnerable/vulnerable.php"
+                },
+                "region": {
+                  "startLine": 12,
+                  "endLine": 12,
+                  "snippet": {
+                    "text": "      10 | // VULNERABLE: Command injection via exec\n      11 | $file = $_REQUEST['filename'];\n>>>   12 | exec(\"cat \" . $file);\n      13 | \n      14 | // VULNERABLE: eval with user input"
+                  }
+                }
+              }
+            }
+          ],
+          "fixes": [
+            {
+              "description": {
+                "text": "Avoid calling shell commands with user input. If necessary, use escapeshellarg() for each argument and escapeshellcmd() for the command.\n"
+              }
+            }
+          ]
+        },
+        {
+          "ruleId": "OJS-SC-RCE-003",
+          "level": "error",
+          "message": {
+            "text": "The preg_replace() function with the /e modifier evaluates the replacement string as PHP code. This is deprecated and dangerous.\n"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "/home/wiyu/Documents/01. Skripsi/code/SAST_NEO/tests/fixtures/php_vulnerable/vulnerable.php"
+                },
+                "region": {
+                  "startLine": 47,
+                  "endLine": 47,
+                  "snippet": {
+                    "text": "      45 | \n      46 | // VULNERABLE: preg_replace with /e\n>>>   47 | $result = preg_replace('/.*/e', $_POST['replace'], $input);\n      48 | ?>"
+                  }
+                }
+              }
+            }
+          ],
+          "fixes": [
+            {
+              "description": {
+                "text": "Replace preg_replace() with /e modifier with preg_replace_callback(). The /e modifier is deprecated since PHP 5.5 and removed in PHP 7.0.\n"
+              }
+            }
+          ]
+        },
+        {
+          "ruleId": "OJS-SC-RCE-003",
+          "level": "error",
+          "message": {
+            "text": "The preg_replace() function with the /e modifier evaluates the replacement string as PHP code. This is deprecated and dangerous.\n"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "/home/wiyu/Documents/01. Skripsi/code/SAST_NEO/tests/fixtures/php_vulnerable/vulnerable.php"
+                },
+                "region": {
+                  "startLine": 47,
+                  "endLine": 47,
+                  "snippet": {
+                    "text": "      45 | \n      46 | // VULNERABLE: preg_replace with /e\n>>>   47 | $result = preg_replace('/.*/e', $_POST['replace'], $input);\n      48 | ?>"
+                  }
+                }
+              }
+            }
+          ],
+          "fixes": [
+            {
+              "description": {
+                "text": "Replace preg_replace() with /e modifier with preg_replace_callback(). The /e modifier is deprecated since PHP 5.5 and removed in PHP 7.0.\n"
+              }
+            }
+          ]
+        },
+        {
+          "ruleId": "OJS-SC-SQLI-002",
+          "level": "error",
+          "message": {
+            "text": "A SQL query is built using string concatenation with variables that may contain user input, creating a SQL injection vulnerability.\n"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "/home/wiyu/Documents/01. Skripsi/code/SAST_NEO/tests/fixtures/php_vulnerable/vulnerable.php"
+                },
+                "region": {
+                  "startLine": 4,
+                  "endLine": 4,
+                  "snippet": {
+                    "text": "       2 | // VULNERABLE: SQL Injection via $_GET in raw query\n       3 | $id = $_GET['id'];\n>>>    4 | $result = $this->retrieve(\"SELECT * FROM submissions WHERE id = \" . $id);\n       5 | \n       6 | // VULNERABLE: XSS via direct echo of user input"
+                  }
+                }
+              }
+            }
+          ],
+          "fixes": [
+            {
+              "description": {
+                "text": "Never concatenate variables into SQL strings. Use parameterized queries or the OJS DAO pattern with proper escaping.\n"
+              }
+            }
+          ]
+        },
+        {
+          "ruleId": "OJS-SC-SQLI-003",
+          "level": "error",
+          "message": {
+            "text": "The OJS DAO retrieve() method is called with interpolated variables, which may allow SQL injection if the variables are not properly sanitized.\n"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "/home/wiyu/Documents/01. Skripsi/code/SAST_NEO/tests/fixtures/php_vulnerable/vulnerable.php"
+                },
+                "region": {
+                  "startLine": 4,
+                  "endLine": 4,
+                  "snippet": {
+                    "text": "       2 | // VULNERABLE: SQL Injection via $_GET in raw query\n       3 | $id = $_GET['id'];\n>>>    4 | $result = $this->retrieve(\"SELECT * FROM submissions WHERE id = \" . $id);\n       5 | \n       6 | // VULNERABLE: XSS via direct echo of user input"
+                  }
+                }
+              }
+            }
+          ],
+          "fixes": [
+            {
+              "description": {
+                "text": "Use the array-based parameter binding in OJS DAO: $this->retrieve('SELECT * FROM t WHERE id = ?', array((int) $id));\n"
+              }
+            }
+          ]
+        },
+        {
+          "ruleId": "OJS-SC-XSS-001",
+          "level": "error",
+          "message": {
+            "text": "User input from superglobals is directly echoed to the browser without HTML encoding, allowing reflected XSS attacks.\n"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "/home/wiyu/Documents/01. Skripsi/code/SAST_NEO/tests/fixtures/php_vulnerable/vulnerable.php"
+                },
+                "region": {
+                  "startLine": 3,
+                  "endLine": 3,
+                  "snippet": {
+                    "text": "       1 | <?php\n       2 | // VULNERABLE: SQL Injection via $_GET in raw query\n>>>    3 | $id = $_GET['id'];\n       4 | $result = $this->retrieve(\"SELECT * FROM submissions WHERE id = \" . $id);\n       5 | "
+                  }
+                }
+              }
+            }
+          ],
+          "fixes": [
+            {
+              "description": {
+                "text": "Apply htmlspecialchars($var, ENT_QUOTES, 'UTF-8') before output. In Smarty templates, use {$var|escape:'html'}.\n"
+              }
+            }
+          ]
+        },
+        {
+          "ruleId": "OJS-SC-XSS-001",
+          "level": "error",
+          "message": {
+            "text": "User input from superglobals is directly echoed to the browser without HTML encoding, allowing reflected XSS attacks.\n"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "/home/wiyu/Documents/01. Skripsi/code/SAST_NEO/tests/fixtures/php_vulnerable/vulnerable.php"
+                },
+                "region": {
+                  "startLine": 7,
+                  "endLine": 7,
+                  "snippet": {
+                    "text": "       5 | \n       6 | // VULNERABLE: XSS via direct echo of user input\n>>>    7 | $name = $_POST['name'];\n       8 | echo \"Hello, \" . $name;\n       9 | "
+                  }
+                }
+              }
+            }
+          ],
+          "fixes": [
+            {
+              "description": {
+                "text": "Apply htmlspecialchars($var, ENT_QUOTES, 'UTF-8') before output. In Smarty templates, use {$var|escape:'html'}.\n"
+              }
+            }
+          ]
+        },
+        {
+          "ruleId": "OJS-SC-XSS-001",
+          "level": "error",
+          "message": {
+            "text": "User input from superglobals is directly echoed to the browser without HTML encoding, allowing reflected XSS attacks.\n"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "/home/wiyu/Documents/01. Skripsi/code/SAST_NEO/tests/fixtures/php_vulnerable/vulnerable.php"
+                },
+                "region": {
+                  "startLine": 11,
+                  "endLine": 11,
+                  "snippet": {
+                    "text": "       9 | \n      10 | // VULNERABLE: Command injection via exec\n>>>   11 | $file = $_REQUEST['filename'];\n      12 | exec(\"cat \" . $file);\n      13 | "
+                  }
+                }
+              }
+            }
+          ],
+          "fixes": [
+            {
+              "description": {
+                "text": "Apply htmlspecialchars($var, ENT_QUOTES, 'UTF-8') before output. In Smarty templates, use {$var|escape:'html'}.\n"
+              }
+            }
+          ]
+        },
+        {
+          "ruleId": "OJS-SC-XSS-001",
+          "level": "error",
+          "message": {
+            "text": "User input from superglobals is directly echoed to the browser without HTML encoding, allowing reflected XSS attacks.\n"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "/home/wiyu/Documents/01. Skripsi/code/SAST_NEO/tests/fixtures/php_vulnerable/vulnerable.php"
+                },
+                "region": {
+                  "startLine": 15,
+                  "endLine": 15,
+                  "snippet": {
+                    "text": "      13 | \n      14 | // VULNERABLE: eval with user input\n>>>   15 | $code = $_GET['code'];\n      16 | eval($code);\n      17 | "
+                  }
+                }
+              }
+            }
+          ],
+          "fixes": [
+            {
+              "description": {
+                "text": "Apply htmlspecialchars($var, ENT_QUOTES, 'UTF-8') before output. In Smarty templates, use {$var|escape:'html'}.\n"
+              }
+            }
+          ]
+        },
+        {
+          "ruleId": "OJS-SC-XSS-001",
+          "level": "error",
+          "message": {
+            "text": "User input from superglobals is directly echoed to the browser without HTML encoding, allowing reflected XSS attacks.\n"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "/home/wiyu/Documents/01. Skripsi/code/SAST_NEO/tests/fixtures/php_vulnerable/vulnerable.php"
+                },
+                "region": {
+                  "startLine": 19,
+                  "endLine": 19,
+                  "snippet": {
+                    "text": "      17 | \n      18 | // VULNERABLE: File inclusion with user input\n>>>   19 | $page = $_GET['page'];\n      20 | include($page . \".php\");\n      21 | "
+                  }
+                }
+              }
+            }
+          ],
+          "fixes": [
+            {
+              "description": {
+                "text": "Apply htmlspecialchars($var, ENT_QUOTES, 'UTF-8') before output. In Smarty templates, use {$var|escape:'html'}.\n"
+              }
+            }
+          ]
+        },
+        {
+          "ruleId": "OJS-SC-XSS-001",
+          "level": "error",
+          "message": {
+            "text": "User input from superglobals is directly echoed to the browser without HTML encoding, allowing reflected XSS attacks.\n"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "/home/wiyu/Documents/01. Skripsi/code/SAST_NEO/tests/fixtures/php_vulnerable/vulnerable.php"
+                },
+                "region": {
+                  "startLine": 27,
+                  "endLine": 27,
+                  "snippet": {
+                    "text": "      25 | \n      26 | // VULNERABLE: SSRF via file_get_contents\n>>>   27 | $url = $_GET['url'];\n      28 | $content = file_get_contents($url);\n      29 | "
+                  }
+                }
+              }
+            }
+          ],
+          "fixes": [
+            {
+              "description": {
+                "text": "Apply htmlspecialchars($var, ENT_QUOTES, 'UTF-8') before output. In Smarty templates, use {$var|escape:'html'}.\n"
+              }
+            }
+          ]
+        },
+        {
+          "ruleId": "OJS-SC-XSS-001",
+          "level": "error",
+          "message": {
+            "text": "User input from superglobals is directly echoed to the browser without HTML encoding, allowing reflected XSS attacks.\n"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "/home/wiyu/Documents/01. Skripsi/code/SAST_NEO/tests/fixtures/php_vulnerable/vulnerable.php"
+                },
+                "region": {
+                  "startLine": 31,
+                  "endLine": 31,
+                  "snippet": {
+                    "text": "      29 | \n      30 | // VULNERABLE: Weak password hash\n>>>   31 | $password = $_POST['password'];\n      32 | $hash = md5($password);\n      33 | "
+                  }
+                }
+              }
+            }
+          ],
+          "fixes": [
+            {
+              "description": {
+                "text": "Apply htmlspecialchars($var, ENT_QUOTES, 'UTF-8') before output. In Smarty templates, use {$var|escape:'html'}.\n"
+              }
+            }
+          ]
+        },
+        {
+          "ruleId": "OJS-SC-DESER-001",
+          "level": "error",
+          "message": {
+            "text": "unserialize() is called with data that may originate from user input, allowing object injection attacks.\n"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "/home/wiyu/Documents/01. Skripsi/code/SAST_NEO/tests/fixtures/php_vulnerable/vulnerable.php"
+                },
+                "region": {
+                  "startLine": 24,
+                  "endLine": 24,
+                  "snippet": {
+                    "text": "      22 | // VULNERABLE: Unserialize user input\n      23 | $data = $_COOKIE['session_data'];\n>>>   24 | $obj = unserialize($data);\n      25 | \n      26 | // VULNERABLE: SSRF via file_get_contents"
+                  }
+                }
+              }
+            }
+          ],
+          "fixes": [
+            {
+              "description": {
+                "text": "Avoid unserialize() with user input. Use json_decode() instead. If unserialize is required, use allowed_classes option: unserialize($data, ['allowed_classes' => false])\n"
+              }
+            }
+          ]
+        },
+        {
+          "ruleId": "OJS-SC-DEBUG-001",
+          "level": "warning",
+          "message": {
+            "text": "Debug functions (var_dump, print_r, debug_backtrace) are present in production code, potentially leaking sensitive information.\n"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "/home/wiyu/Documents/01. Skripsi/code/SAST_NEO/tests/fixtures/php_vulnerable/vulnerable.php"
+                },
+                "region": {
+                  "startLine": 41,
+                  "endLine": 41,
+                  "snippet": {
+                    "text": "      39 | \n      40 | // VULNERABLE: var_dump in production\n>>>   41 | var_dump($user_data);\n      42 | \n      43 | // VULNERABLE: phpinfo exposed"
+                  }
+                }
+              }
+            }
+          ],
+          "fixes": [
+            {
+              "description": {
+                "text": "Remove all debug functions from production code. Use proper logging instead of debug output functions.\n"
+              }
+            }
+          ]
+        },
+        {
+          "ruleId": "OJS-SC-DEBUG-003",
+          "level": "error",
+          "message": {
+            "text": "phpinfo() is called in the codebase, potentially exposing server configuration details to attackers.\n"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "/home/wiyu/Documents/01. Skripsi/code/SAST_NEO/tests/fixtures/php_vulnerable/vulnerable.php"
+                },
+                "region": {
+                  "startLine": 44,
+                  "endLine": 44,
+                  "snippet": {
+                    "text": "      42 | \n      43 | // VULNERABLE: phpinfo exposed\n>>>   44 | phpinfo();\n      45 | \n      46 | // VULNERABLE: preg_replace with /e"
+                  }
+                }
+              }
+            }
+          ],
+          "fixes": [
+            {
+              "description": {
+                "text": "Remove phpinfo() calls from production code entirely.\n"
+              }
+            }
+          ]
+        },
+        {
+          "ruleId": "OJS-SC-PT-001",
+          "level": "error",
+          "message": {
+            "text": "User input containing path traversal sequences (../) is used in file operations, allowing access to arbitrary files.\n"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "/home/wiyu/Documents/01. Skripsi/code/SAST_NEO/tests/fixtures/php_vulnerable/vulnerable.php"
+                },
+                "region": {
+                  "startLine": 28,
+                  "endLine": 28,
+                  "snippet": {
+                    "text": "      26 | // VULNERABLE: SSRF via file_get_contents\n      27 | $url = $_GET['url'];\n>>>   28 | $content = file_get_contents($url);\n      29 | \n      30 | // VULNERABLE: Weak password hash"
+                  }
+                }
+              }
+            }
+          ],
+          "fixes": [
+            {
+              "description": {
+                "text": "Use basename() to strip directory components from user input. Validate with realpath() and check the result is within allowed directories.\n"
+              }
+            }
+          ]
+        },
+        {
+          "ruleId": "OJS-SC-HASH-001",
+          "level": "error",
+          "message": {
+            "text": "md5() or sha1() is used for password hashing, which is computationally fast and vulnerable to brute-force attacks.\n"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "/home/wiyu/Documents/01. Skripsi/code/SAST_NEO/tests/fixtures/php_vulnerable/vulnerable.php"
+                },
+                "region": {
+                  "startLine": 32,
+                  "endLine": 32,
+                  "snippet": {
+                    "text": "      30 | // VULNERABLE: Weak password hash\n      31 | $password = $_POST['password'];\n>>>   32 | $hash = md5($password);\n      33 | \n      34 | // VULNERABLE: Insecure randomness for token"
+                  }
+                }
+              }
+            }
+          ],
+          "fixes": [
+            {
+              "description": {
+                "text": "Use password_hash() with PASSWORD_BCRYPT or PASSWORD_ARGON2ID. Verify with password_verify().\n"
+              }
+            }
+          ]
+        },
+        {
+          "ruleId": "OJS-SC-HASH-002",
+          "level": "warning",
+          "message": {
+            "text": "md5() is used for generating tokens, signatures, or other security-sensitive values where collision resistance matters.\n"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "/home/wiyu/Documents/01. Skripsi/code/SAST_NEO/tests/fixtures/php_vulnerable/vulnerable.php"
+                },
+                "region": {
+                  "startLine": 35,
+                  "endLine": 35,
+                  "snippet": {
+                    "text": "      33 | \n      34 | // VULNERABLE: Insecure randomness for token\n>>>   35 | $token = md5(rand());\n      36 | \n      37 | // VULNERABLE: Hardcoded password"
+                  }
+                }
+              }
+            }
+          ],
+          "fixes": [
+            {
+              "description": {
+                "text": "Use hash('sha256', ...) or hash_hmac() for security operations. For tokens, use random_bytes() or bin2hex(random_bytes(32)).\n"
+              }
+            }
+          ]
+        },
+        {
+          "ruleId": "OJS-SC-HASH-003",
+          "level": "warning",
+          "message": {
+            "text": "A hash function is used without a salt, making it vulnerable to rainbow table attacks.\n"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "/home/wiyu/Documents/01. Skripsi/code/SAST_NEO/tests/fixtures/php_vulnerable/vulnerable.php"
+                },
+                "region": {
+                  "startLine": 32,
+                  "endLine": 32,
+                  "snippet": {
+                    "text": "      30 | // VULNERABLE: Weak password hash\n      31 | $password = $_POST['password'];\n>>>   32 | $hash = md5($password);\n      33 | \n      34 | // VULNERABLE: Insecure randomness for token"
+                  }
+                }
+              }
+            }
+          ],
+          "fixes": [
+            {
+              "description": {
+                "text": "Use password_hash() which automatically handles salting. If using hash(), prepend a unique per-user salt.\n"
+              }
+            }
+          ]
+        },
+        {
+          "ruleId": "OJS-SC-RAND-001",
+          "level": "error",
+          "message": {
+            "text": "rand() or mt_rand() is used for generating security tokens, which are predictable and not cryptographically secure.\n"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "/home/wiyu/Documents/01. Skripsi/code/SAST_NEO/tests/fixtures/php_vulnerable/vulnerable.php"
+                },
+                "region": {
+                  "startLine": 35,
+                  "endLine": 35,
+                  "snippet": {
+                    "text": "      33 | \n      34 | // VULNERABLE: Insecure randomness for token\n>>>   35 | $token = md5(rand());\n      36 | \n      37 | // VULNERABLE: Hardcoded password"
+                  }
+                }
+              }
+            }
+          ],
+          "fixes": [
+            {
+              "description": {
+                "text": "Use random_bytes() or random_int() for cryptographic randomness. In OJS, use PKPSecurity methods for token generation.\n"
+              }
+            }
+          ]
+        },
+        {
+          "ruleId": "OJS-SC-AUTH-002",
+          "level": "error",
+          "message": {
+            "text": "Password reset tokens are generated using weak randomness (rand(), mt_rand(), uniqid()) instead of cryptographically secure methods.\n"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "/home/wiyu/Documents/01. Skripsi/code/SAST_NEO/tests/fixtures/php_vulnerable/vulnerable.php"
+                },
+                "region": {
+                  "startLine": 35,
+                  "endLine": 35,
+                  "snippet": {
+                    "text": "      33 | \n      34 | // VULNERABLE: Insecure randomness for token\n>>>   35 | $token = md5(rand());\n      36 | \n      37 | // VULNERABLE: Hardcoded password"
+                  }
+                }
+              }
+            }
+          ],
+          "fixes": [
+            {
+              "description": {
+                "text": "Use random_bytes() or openssl_random_pseudo_bytes() for generating security tokens. In OJS, use PKPSecurity::generateRandomToken().\n"
+              }
+            }
+          ]
+        },
+        {
+          "ruleId": "OJS-SC-AUTH-003",
+          "level": "error",
+          "message": {
+            "text": "Authentication credentials are hardcoded in the source code, which could be exposed through source code leaks.\n"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "/home/wiyu/Documents/01. Skripsi/code/SAST_NEO/tests/fixtures/php_vulnerable/vulnerable.php"
+                },
+                "region": {
+                  "startLine": 38,
+                  "endLine": 38,
+                  "snippet": {
+                    "text": "      36 | \n      37 | // VULNERABLE: Hardcoded password\n>>>   38 | $db_password = \"supersecret123\";\n      39 | \n      40 | // VULNERABLE: var_dump in production"
+                  }
+                }
+              }
+            }
+          ],
+          "fixes": [
+            {
+              "description": {
+                "text": "Store credentials in environment variables or a secure configuration file outside the web root. Never hardcode secrets in source code.\n"
+              }
+            }
+          ]
+        },
+        {
+          "ruleId": "OJS-SC-CSRF-001",
+          "level": "error",
+          "message": {
+            "text": "A form processing handler does not validate a CSRF token, allowing cross-site request forgery attacks.\n"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "/home/wiyu/Documents/01. Skripsi/code/SAST_NEO/tests/fixtures/php_vulnerable/vulnerable.php"
+                },
+                "region": {
+                  "startLine": 7,
+                  "endLine": 7,
+                  "snippet": {
+                    "text": "       5 | \n       6 | // VULNERABLE: XSS via direct echo of user input\n>>>    7 | $name = $_POST['name'];\n       8 | echo \"Hello, \" . $name;\n       9 | "
+                  }
+                }
+              }
+            }
+          ],
+          "fixes": [
+            {
+              "description": {
+                "text": "Include a CSRF token in all POST forms and validate it server-side. OJS provides CSRFTokenManager for this purpose.\n"
+              }
+            }
+          ]
+        },
+        {
+          "ruleId": "OJS-SC-CSRF-001",
+          "level": "error",
+          "message": {
+            "text": "A form processing handler does not validate a CSRF token, allowing cross-site request forgery attacks.\n"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "/home/wiyu/Documents/01. Skripsi/code/SAST_NEO/tests/fixtures/php_vulnerable/vulnerable.php"
+                },
+                "region": {
+                  "startLine": 31,
+                  "endLine": 31,
+                  "snippet": {
+                    "text": "      29 | \n      30 | // VULNERABLE: Weak password hash\n>>>   31 | $password = $_POST['password'];\n      32 | $hash = md5($password);\n      33 | "
+                  }
+                }
+              }
+            }
+          ],
+          "fixes": [
+            {
+              "description": {
+                "text": "Include a CSRF token in all POST forms and validate it server-side. OJS provides CSRFTokenManager for this purpose.\n"
+              }
+            }
+          ]
+        },
+        {
+          "ruleId": "OJS-SC-CSRF-001",
+          "level": "error",
+          "message": {
+            "text": "A form processing handler does not validate a CSRF token, allowing cross-site request forgery attacks.\n"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "/home/wiyu/Documents/01. Skripsi/code/SAST_NEO/tests/fixtures/php_vulnerable/vulnerable.php"
+                },
+                "region": {
+                  "startLine": 47,
+                  "endLine": 47,
+                  "snippet": {
+                    "text": "      45 | \n      46 | // VULNERABLE: preg_replace with /e\n>>>   47 | $result = preg_replace('/.*/e', $_POST['replace'], $input);\n      48 | ?>"
+                  }
+                }
+              }
+            }
+          ],
+          "fixes": [
+            {
+              "description": {
+                "text": "Include a CSRF token in all POST forms and validate it server-side. OJS provides CSRFTokenManager for this purpose.\n"
+              }
+            }
+          ]
+        },
+        {
+          "ruleId": "OJS-SC-SQLINJECTION-TAINT",
+          "level": "error",
+          "message": {
+            "text": "Data from user input ($request->getUserVar('submissionId')) flows into a dangerous function (retrieve) without adequate sanitization."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "/home/wiyu/Documents/01. Skripsi/code/SAST_NEO/tests/fixtures/php_vulnerable/ojs_vulnerable.php"
+                },
+                "region": {
+                  "startLine": 3,
+                  "endLine": 4,
+                  "snippet": {
+                    "text": "       2 | // VULNERABLE: OJS-specific SQL injection via getUserVar\n       3 | $submissionId = $request->getUserVar('submissionId');\n>>>    4 | $result = $this->retrieve(\"SELECT * FROM submissions WHERE id = \" . $submissionId);\n       5 | \n       6 | // VULNERABLE: XSS via templateMgr->assign without escaping"
+                  }
+                }
+              }
+            }
+          ],
+          "codeFlows": [
+            {
+              "threadFlows": [
+                {
+                  "locations": [
+                    {
+                      "location": {
+                        "message": {
+                          "text": "Source: $request->getUserVar('submissionId')"
+                        },
+                        "physicalLocation": {
+                          "artifactLocation": {
+                            "uri": "/home/wiyu/Documents/01. Skripsi/code/SAST_NEO/tests/fixtures/php_vulnerable/ojs_vulnerable.php"
+                          },
+                          "region": {
+                            "startLine": 3
+                          }
+                        }
+                      }
+                    },
+                    {
+                      "location": {
+                        "message": {
+                          "text": "$submissionId = $request->getUserVar('submissionId') (line 3)"
+                        },
+                        "physicalLocation": {
+                          "artifactLocation": {
+                            "uri": "/home/wiyu/Documents/01. Skripsi/code/SAST_NEO/tests/fixtures/php_vulnerable/ojs_vulnerable.php"
+                          }
+                        }
+                      }
+                    },
+                    {
+                      "location": {
+                        "message": {
+                          "text": "Sink: retrieve"
+                        },
+                        "physicalLocation": {
+                          "artifactLocation": {
+                            "uri": "/home/wiyu/Documents/01. Skripsi/code/SAST_NEO/tests/fixtures/php_vulnerable/ojs_vulnerable.php"
+                          },
+                          "region": {
+                            "startLine": 4
+                          }
+                        }
+                      }
+                    }
+                  ]
+                }
+              ]
+            }
+          ],
+          "fixes": [
+            {
+              "description": {
+                "text": "Use prepared statements or parameterized queries. If using OJS DAO, use $this->_driver->escapeString() or intval() for integer parameters."
+              }
+            }
+          ]
+        },
+        {
+          "ruleId": "OJS-SC-XSS-TAINT",
+          "level": "error",
+          "message": {
+            "text": "Data from user input ($request->getUserVar('title')) flows into a dangerous function (assign) without adequate sanitization."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "/home/wiyu/Documents/01. Skripsi/code/SAST_NEO/tests/fixtures/php_vulnerable/ojs_vulnerable.php"
+                },
+                "region": {
+                  "startLine": 7,
+                  "endLine": 8,
+                  "snippet": {
+                    "text": "       6 | // VULNERABLE: XSS via templateMgr->assign without escaping\n       7 | $title = $request->getUserVar('title');\n>>>    8 | $templateMgr->assign('articleTitle', $title);\n       9 | \n      10 | // VULNERABLE: OJS IDOR"
+                  }
+                }
+              }
+            }
+          ],
+          "codeFlows": [
+            {
+              "threadFlows": [
+                {
+                  "locations": [
+                    {
+                      "location": {
+                        "message": {
+                          "text": "Source: $request->getUserVar('title')"
+                        },
+                        "physicalLocation": {
+                          "artifactLocation": {
+                            "uri": "/home/wiyu/Documents/01. Skripsi/code/SAST_NEO/tests/fixtures/php_vulnerable/ojs_vulnerable.php"
+                          },
+                          "region": {
+                            "startLine": 7
+                          }
+                        }
+                      }
+                    },
+                    {
+                      "location": {
+                        "message": {
+                          "text": "$title = $request->getUserVar('title') (line 7)"
+                        },
+                        "physicalLocation": {
+                          "artifactLocation": {
+                            "uri": "/home/wiyu/Documents/01. Skripsi/code/SAST_NEO/tests/fixtures/php_vulnerable/ojs_vulnerable.php"
+                          }
+                        }
+                      }
+                    },
+                    {
+                      "location": {
+                        "message": {
+                          "text": "Sink: assign"
+                        },
+                        "physicalLocation": {
+                          "artifactLocation": {
+                            "uri": "/home/wiyu/Documents/01. Skripsi/code/SAST_NEO/tests/fixtures/php_vulnerable/ojs_vulnerable.php"
+                          },
+                          "region": {
+                            "startLine": 8
+                          }
+                        }
+                      }
+                    }
+                  ]
+                }
+              ]
+            }
+          ],
+          "fixes": [
+            {
+              "description": {
+                "text": "Apply htmlspecialchars($var, ENT_QUOTES, 'UTF-8') before output. In OJS Smarty templates, use |escape modifier. For rich text, use PKPString::stripUnsafeHtml()."
+              }
+            }
+          ]
+        },
+        {
+          "ruleId": "OJS-SC-SQLI-002",
+          "level": "error",
+          "message": {
+            "text": "A SQL query is built using string concatenation with variables that may contain user input, creating a SQL injection vulnerability.\n"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "/home/wiyu/Documents/01. Skripsi/code/SAST_NEO/tests/fixtures/php_vulnerable/ojs_vulnerable.php"
+                },
+                "region": {
+                  "startLine": 4,
+                  "endLine": 4,
+                  "snippet": {
+                    "text": "       2 | // VULNERABLE: OJS-specific SQL injection via getUserVar\n       3 | $submissionId = $request->getUserVar('submissionId');\n>>>    4 | $result = $this->retrieve(\"SELECT * FROM submissions WHERE id = \" . $submissionId);\n       5 | \n       6 | // VULNERABLE: XSS via templateMgr->assign without escaping"
+                  }
+                }
+              }
+            }
+          ],
+          "fixes": [
+            {
+              "description": {
+                "text": "Never concatenate variables into SQL strings. Use parameterized queries or the OJS DAO pattern with proper escaping.\n"
+              }
+            }
+          ]
+        },
+        {
+          "ruleId": "OJS-SC-SQLI-003",
+          "level": "error",
+          "message": {
+            "text": "The OJS DAO retrieve() method is called with interpolated variables, which may allow SQL injection if the variables are not properly sanitized.\n"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "/home/wiyu/Documents/01. Skripsi/code/SAST_NEO/tests/fixtures/php_vulnerable/ojs_vulnerable.php"
+                },
+                "region": {
+                  "startLine": 4,
+                  "endLine": 4,
+                  "snippet": {
+                    "text": "       2 | // VULNERABLE: OJS-specific SQL injection via getUserVar\n       3 | $submissionId = $request->getUserVar('submissionId');\n>>>    4 | $result = $this->retrieve(\"SELECT * FROM submissions WHERE id = \" . $submissionId);\n       5 | \n       6 | // VULNERABLE: XSS via templateMgr->assign without escaping"
+                  }
+                }
+              }
+            }
+          ],
+          "fixes": [
+            {
+              "description": {
+                "text": "Use the array-based parameter binding in OJS DAO: $this->retrieve('SELECT * FROM t WHERE id = ?', array((int) $id));\n"
+              }
+            }
+          ]
+        },
+        {
+          "ruleId": "OJS-SC-XSS-001",
+          "level": "error",
+          "message": {
+            "text": "User input from superglobals is directly echoed to the browser without HTML encoding, allowing reflected XSS attacks.\n"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "/home/wiyu/Documents/01. Skripsi/code/SAST_NEO/tests/fixtures/php_vulnerable/ojs_vulnerable.php"
+                },
+                "region": {
+                  "startLine": 11,
+                  "endLine": 11,
+                  "snippet": {
+                    "text": "       9 | \n      10 | // VULNERABLE: OJS IDOR\n>>>   11 | $articleId = $_GET['articleId'];\n      12 | $article = $articleDAO->getById($articleId);\n      13 | "
+                  }
+                }
+              }
+            }
+          ],
+          "fixes": [
+            {
+              "description": {
+                "text": "Apply htmlspecialchars($var, ENT_QUOTES, 'UTF-8') before output. In Smarty templates, use {$var|escape:'html'}.\n"
+              }
+            }
+          ]
+        },
+        {
+          "ruleId": "OJS-SC-XSS-001",
+          "level": "error",
+          "message": {
+            "text": "User input from superglobals is directly echoed to the browser without HTML encoding, allowing reflected XSS attacks.\n"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "/home/wiyu/Documents/01. Skripsi/code/SAST_NEO/tests/fixtures/php_vulnerable/ojs_vulnerable.php"
+                },
+                "region": {
+                  "startLine": 15,
+                  "endLine": 15,
+                  "snippet": {
+                    "text": "      13 | \n      14 | // VULNERABLE: OJS hook with user input\n>>>   15 | $hookName = $_GET['hook'];\n      16 | HookRegistry::register($hookName, array($this, 'callback'));\n      17 | "
+                  }
+                }
+              }
+            }
+          ],
+          "fixes": [
+            {
+              "description": {
+                "text": "Apply htmlspecialchars($var, ENT_QUOTES, 'UTF-8') before output. In Smarty templates, use {$var|escape:'html'}.\n"
+              }
+            }
+          ]
+        },
+        {
+          "ruleId": "OJS-SC-CVE-001",
+          "level": "error",
+          "message": {
+            "text": "OJS versions before 3.3.0-16 are vulnerable to stored XSS through the galley label field. An authenticated user can inject JavaScript via a crafted galley label.\n"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "/home/wiyu/Documents/01. Skripsi/code/SAST_NEO/tests/fixtures/php_vulnerable/ojs_vulnerable.php"
+                },
+                "region": {
+                  "startLine": 19,
+                  "endLine": 19,
+                  "snippet": {
+                    "text": "      17 | \n      18 | // VULNERABLE: Galley label without escaping (CVE-2023-33970)\n>>>   19 | $label = $galley->getLabel();\n      20 | $templateMgr->assign('galleyLabel', $label);\n      21 | ?>"
+                  }
+                }
+              }
+            }
+          ],
+          "fixes": [
+            {
+              "description": {
+                "text": "Update to OJS 3.3.0-16 or later. Apply htmlspecialchars() to galley label output.\n"
+              }
+            }
+          ]
+        }
+      ],
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "startTimeUtc": "2026-04-22T22:22:25"
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,71 @@
+rules:
+  - id: "OJS-SC-SSRF-001"
+    name: "Server-Side Request Forgery via user-controlled URL"
+    description: >
+      A URL from user input is passed to curl or file_get_contents,
+      allowing an attacker to make the server request internal resources.
+    severity: "HIGH"
+    category: "source_code"
+    subcategory: "misc"
+    cwe: "CWE-918"
+    owasp: "A10:2021"
+    taint_analysis:
+      sources:
+        - "$_GET"
+        - "$_POST"
+        - "$_REQUEST"
+        - "Request::getUserVar()"
+      sinks:
+        - "curl_exec"
+        - "file_get_contents"
+        - "fopen"
+        - "fsockopen"
+      sanitizers: []
+    pattern_match:
+      type: "regex"
+      patterns:
+        - 'curl_setopt.*?CURLOPT_URL.*?\$_(GET|POST|REQUEST)'
+        - 'file_get_contents\s*\(\s*\$_(GET|POST|REQUEST)\['
+        - 'fopen\s*\(\s*\$_(GET|POST|REQUEST)\['
+    remediation: >
+      Validate and whitelist allowed URLs/domains. Block requests to
+      private/internal IP ranges (127.0.0.0/8, 10.0.0.0/8, 172.16.0.0/12,
+      192.168.0.0/16). Use a URL parser to enforce http/https only.
+    references:
+      - "https://cwe.mitre.org/data/definitions/918.html"
+
+  - id: "OJS-SC-SSRF-002"
+    name: "SSRF via OJS HTTP client"
+    description: >
+      The OJS HTTP request library is used with a user-controlled URL,
+      potentially allowing SSRF.
+    severity: "HIGH"
+    category: "source_code"
+    subcategory: "misc"
+    cwe: "CWE-918"
+    owasp: "A10:2021"
+    pattern_match:
+      type: "regex"
+      patterns:
+        - 'Http::request\s*\(\s*\$'
+        - 'GuzzleHttp.*?request\s*\(.*?\$_(GET|POST|REQUEST)'
+    remediation: >
+      Validate URLs against a whitelist before making HTTP requests.
+
+  - id: "OJS-SC-SSRF-003"
+    name: "DNS rebinding potential"
+    description: >
+      URL validation is performed before the request is made, but the
+      DNS could be changed between validation and request (TOCTOU).
+    severity: "MEDIUM"
+    category: "source_code"
+    subcategory: "misc"
+    cwe: "CWE-918"
+    owasp: "A10:2021"
+    pattern_match:
+      type: "regex"
+      patterns:
+        - '(gethostbyname|dns_get_record)\s*\(.*?\$\w+.*?(curl_exec|file_get_contents)'
+    remediation: >
+      Pin the resolved IP address for the request. Use CURLOPT_RESOLVE
+      to prevent DNS rebinding.

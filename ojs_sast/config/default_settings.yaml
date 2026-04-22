@@ -1,0 +1,47 @@
+# OJS-SAST Default Configuration
+
+scanner:
+  max_file_size_mb: 10
+  max_files: 50000
+  timeout_seconds: 300
+
+  exclude_dirs:
+    - cache
+    - lib/vendor
+    - node_modules
+    - .git
+    - __pycache__
+
+  php_extensions:
+    - .php
+    - .phtml
+    - .php3
+    - .php4
+    - .php5
+    - .php7
+    - .phps
+    - .inc
+
+  js_extensions:
+    - .js
+    - .jsx
+
+  template_extensions:
+    - .tpl
+    - .smarty
+
+severity:
+  default_min: INFO
+  display_order:
+    - CRITICAL
+    - HIGH
+    - MEDIUM
+    - LOW
+    - INFO
+
+reporting:
+  formats:
+    - json
+    - html
+    - sarif
+  output_dir: results

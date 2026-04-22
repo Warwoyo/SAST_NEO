@@ -1,0 +1,52 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ojs-sast"
+version = "1.0.0"
+description = "Static Application Security Testing tool for Open Journal Systems (OJS)"
+readme = "README.md"
+license = {text = "MIT"}
+requires-python = ">=3.10"
+authors = [
+    {name = "OJS-SAST Team"}
+]
+keywords = ["security", "sast", "ojs", "php", "taint-analysis"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Intended Audience :: System Administrators",
+    "Topic :: Security",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+]
+
+dependencies = [
+    "tree-sitter>=0.22.0",
+    "tree-sitter-php>=0.22.0",
+    "python-magic>=0.4.27",
+    "click>=8.1.0",
+    "pyyaml>=6.0",
+    "jinja2>=3.1.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0",
+    "pytest-cov>=4.0",
+]
+
+[project.scripts]
+ojs-sast = "ojs_sast.cli:cli"
+
+[tool.setuptools.packages.find]
+include = ["ojs_sast*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_functions = ["test_*"]
+addopts = "-v --tb=short"

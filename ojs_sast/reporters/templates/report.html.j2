@@ -1,0 +1,615 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="OJS-SAST Security Scan Report">
+    <title>OJS-SAST Security Report — {{ report.timestamp }}</title>
+    <style>
+        :root {
+            --bg-primary: #0d1117;
+            --bg-secondary: #161b22;
+            --bg-tertiary: #21262d;
+            --border: #30363d;
+            --text-primary: #e6edf3;
+            --text-secondary: #8b949e;
+            --text-muted: #6e7681;
+            --accent-blue: #58a6ff;
+            --accent-purple: #bc8cff;
+            --severity-critical: #f85149;
+            --severity-high: #f0883e;
+            --severity-medium: #d29922;
+            --severity-low: #58a6ff;
+            --severity-info: #8b949e;
+            --success: #3fb950;
+            --radius: 8px;
+            --shadow: 0 2px 8px rgba(0,0,0,0.3);
+        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            line-height: 1.6;
+        }
+        .container { max-width: 1400px; margin: 0 auto; padding: 24px; }
+
+        /* Header */
+        .header {
+            background: linear-gradient(135deg, #1a1e2e 0%, #0d1117 100%);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 32px;
+            margin-bottom: 24px;
+        }
+        .header h1 {
+            font-size: 28px;
+            font-weight: 700;
+            margin-bottom: 8px;
+            background: linear-gradient(90deg, var(--accent-blue), var(--accent-purple));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+        .header-meta { color: var(--text-secondary); font-size: 14px; }
+        .header-meta span { margin-right: 24px; }
+
+        /* Summary Cards */
+        .summary-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 16px;
+            margin-bottom: 24px;
+        }
+        .summary-card {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 20px;
+            text-align: center;
+            transition: transform 0.2s;
+        }
+        .summary-card:hover { transform: translateY(-2px); }
+        .summary-card .count {
+            font-size: 36px;
+            font-weight: 700;
+            line-height: 1.2;
+        }
+        .summary-card .label {
+            font-size: 12px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            color: var(--text-secondary);
+            margin-top: 4px;
+        }
+        .sev-critical .count { color: var(--severity-critical); }
+        .sev-high .count { color: var(--severity-high); }
+        .sev-medium .count { color: var(--severity-medium); }
+        .sev-low .count { color: var(--severity-low); }
+        .sev-info .count { color: var(--severity-info); }
+
+        /* Chart Section */
+        .charts-row {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 16px;
+            margin-bottom: 24px;
+        }
+        .chart-card {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 24px;
+        }
+        .chart-card h3 {
+            font-size: 16px;
+            margin-bottom: 16px;
+            color: var(--text-secondary);
+        }
+        .bar-chart .bar-row {
+            display: flex;
+            align-items: center;
+            margin-bottom: 8px;
+        }
+        .bar-chart .bar-label {
+            width: 90px;
+            font-size: 13px;
+            color: var(--text-secondary);
+        }
+        .bar-chart .bar-track {
+            flex: 1;
+            height: 24px;
+            background: var(--bg-tertiary);
+            border-radius: 4px;
+            overflow: hidden;
+            margin: 0 12px;
+        }
+        .bar-chart .bar-fill {
+            height: 100%;
+            border-radius: 4px;
+            transition: width 0.5s ease;
+        }
+        .bar-chart .bar-value {
+            width: 40px;
+            text-align: right;
+            font-size: 14px;
+            font-weight: 600;
+        }
+
+        /* Filters */
+        .filters {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 16px 24px;
+            margin-bottom: 24px;
+            display: flex;
+            gap: 16px;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+        .filters label {
+            font-size: 13px;
+            color: var(--text-secondary);
+        }
+        .filters select, .filters input {
+            background: var(--bg-tertiary);
+            border: 1px solid var(--border);
+            color: var(--text-primary);
+            padding: 6px 12px;
+            border-radius: 6px;
+            font-size: 13px;
+        }
+        .filters input[type="text"] { width: 250px; }
+        .filter-count {
+            margin-left: auto;
+            font-size: 13px;
+            color: var(--text-muted);
+        }
+
+        /* Findings Table */
+        .findings-table {
+            width: 100%;
+            border-collapse: collapse;
+            background: var(--bg-secondary);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            overflow: hidden;
+        }
+        .findings-table th {
+            background: var(--bg-tertiary);
+            padding: 12px 16px;
+            text-align: left;
+            font-size: 12px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            color: var(--text-secondary);
+            cursor: pointer;
+            user-select: none;
+            border-bottom: 1px solid var(--border);
+        }
+        .findings-table th:hover { color: var(--accent-blue); }
+        .findings-table td {
+            padding: 12px 16px;
+            border-bottom: 1px solid var(--border);
+            font-size: 14px;
+            vertical-align: top;
+        }
+        .findings-table tr:last-child td { border-bottom: none; }
+        .findings-table tr:hover td { background: rgba(88,166,255,0.04); }
+        .findings-table tr { cursor: pointer; }
+
+        /* Severity Badge */
+        .badge {
+            display: inline-block;
+            padding: 2px 10px;
+            border-radius: 12px;
+            font-size: 11px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        .badge-CRITICAL { background: rgba(248,81,73,0.15); color: var(--severity-critical); border: 1px solid rgba(248,81,73,0.3); }
+        .badge-HIGH { background: rgba(240,136,62,0.15); color: var(--severity-high); border: 1px solid rgba(240,136,62,0.3); }
+        .badge-MEDIUM { background: rgba(210,153,34,0.15); color: var(--severity-medium); border: 1px solid rgba(210,153,34,0.3); }
+        .badge-LOW { background: rgba(88,166,255,0.15); color: var(--severity-low); border: 1px solid rgba(88,166,255,0.3); }
+        .badge-INFO { background: rgba(139,148,158,0.15); color: var(--severity-info); border: 1px solid rgba(139,148,158,0.3); }
+
+        /* Finding Detail Modal */
+        .modal-overlay {
+            display: none;
+            position: fixed;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(0,0,0,0.7);
+            z-index: 100;
+            overflow-y: auto;
+            padding: 40px 20px;
+        }
+        .modal-overlay.active { display: flex; justify-content: center; align-items: flex-start; }
+        .modal {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            max-width: 900px;
+            width: 100%;
+            padding: 32px;
+            box-shadow: 0 16px 48px rgba(0,0,0,0.4);
+        }
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            margin-bottom: 24px;
+        }
+        .modal-header h2 { font-size: 20px; }
+        .modal-close {
+            background: none;
+            border: none;
+            color: var(--text-secondary);
+            font-size: 24px;
+            cursor: pointer;
+            padding: 4px 8px;
+        }
+        .modal-close:hover { color: var(--text-primary); }
+        .detail-section {
+            margin-bottom: 20px;
+        }
+        .detail-section h4 {
+            font-size: 13px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            color: var(--accent-blue);
+            margin-bottom: 8px;
+        }
+        .detail-section p, .detail-section pre {
+            color: var(--text-secondary);
+            font-size: 14px;
+        }
+        .code-block {
+            background: var(--bg-primary);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            padding: 16px;
+            overflow-x: auto;
+            font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+            font-size: 13px;
+            line-height: 1.5;
+            white-space: pre;
+            color: var(--text-primary);
+        }
+        .taint-path {
+            background: var(--bg-primary);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            padding: 16px;
+        }
+        .taint-step {
+            display: flex;
+            align-items: center;
+            padding: 6px 0;
+            font-size: 13px;
+            font-family: monospace;
+        }
+        .taint-step::before {
+            content: '→';
+            color: var(--severity-high);
+            margin-right: 8px;
+            font-weight: bold;
+        }
+        .taint-step:first-child::before {
+            content: '●';
+            color: var(--success);
+        }
+        .taint-step:last-child::before {
+            content: '◆';
+            color: var(--severity-critical);
+        }
+        .meta-tags { display: flex; gap: 8px; flex-wrap: wrap; }
+        .meta-tag {
+            background: var(--bg-tertiary);
+            border: 1px solid var(--border);
+            padding: 2px 10px;
+            border-radius: 4px;
+            font-size: 12px;
+            color: var(--text-secondary);
+        }
+
+        /* Footer */
+        .footer {
+            text-align: center;
+            padding: 24px;
+            color: var(--text-muted);
+            font-size: 13px;
+            border-top: 1px solid var(--border);
+            margin-top: 32px;
+        }
+
+        @media (max-width: 768px) {
+            .charts-row { grid-template-columns: 1fr; }
+            .filters { flex-direction: column; align-items: stretch; }
+            .filters input[type="text"] { width: 100%; }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <div class="header">
+            <h1>🔒 OJS-SAST Security Report</h1>
+            <div class="header-meta">
+                <span>📅 {{ report.timestamp }}</span>
+                <span>📂 {{ report.ojs_path }}</span>
+                {% if report.ojs_version %}<span>🏷️ OJS {{ report.ojs_version }}</span>{% endif %}
+                <span>⏱️ {{ "%.1f"|format(report.scan_duration_seconds) }}s</span>
+                <span>📄 {{ report.files_scanned }} files</span>
+                <span>📏 {{ report.rules_loaded }} rules</span>
+            </div>
+        </div>
+
+        <!-- Summary Cards -->
+        <div class="summary-grid">
+            <div class="summary-card sev-critical">
+                <div class="count">{{ summary.CRITICAL }}</div>
+                <div class="label">Critical</div>
+            </div>
+            <div class="summary-card sev-high">
+                <div class="count">{{ summary.HIGH }}</div>
+                <div class="label">High</div>
+            </div>
+            <div class="summary-card sev-medium">
+                <div class="count">{{ summary.MEDIUM }}</div>
+                <div class="label">Medium</div>
+            </div>
+            <div class="summary-card sev-low">
+                <div class="count">{{ summary.LOW }}</div>
+                <div class="label">Low</div>
+            </div>
+            <div class="summary-card sev-info">
+                <div class="count">{{ summary.INFO }}</div>
+                <div class="label">Info</div>
+            </div>
+        </div>
+
+        <!-- Charts -->
+        <div class="charts-row">
+            <div class="chart-card">
+                <h3>Findings by Severity</h3>
+                <div class="bar-chart">
+                    {% set total = (summary.CRITICAL + summary.HIGH + summary.MEDIUM + summary.LOW + summary.INFO) or 1 %}
+                    {% for sev, color in [('CRITICAL', '#f85149'), ('HIGH', '#f0883e'), ('MEDIUM', '#d29922'), ('LOW', '#58a6ff'), ('INFO', '#8b949e')] %}
+                    <div class="bar-row">
+                        <span class="bar-label">{{ sev }}</span>
+                        <div class="bar-track">
+                            <div class="bar-fill" style="width: {{ (summary[sev] / total * 100)|round(1) }}%; background: {{ color }};"></div>
+                        </div>
+                        <span class="bar-value" style="color: {{ color }};">{{ summary[sev] }}</span>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+            <div class="chart-card">
+                <h3>Findings by Category</h3>
+                <div class="bar-chart">
+                    {% for cat, cat_findings in by_category.items() %}
+                    <div class="bar-row">
+                        <span class="bar-label">{{ cat }}</span>
+                        <div class="bar-track">
+                            <div class="bar-fill" style="width: {{ (cat_findings|length / total * 100)|round(1) }}%; background: var(--accent-blue);"></div>
+                        </div>
+                        <span class="bar-value">{{ cat_findings|length }}</span>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+
+        <!-- Filters -->
+        <div class="filters">
+            <div>
+                <label>Severity</label><br>
+                <select id="filterSeverity" onchange="filterFindings()">
+                    <option value="all">All Severities</option>
+                    <option value="CRITICAL">Critical</option>
+                    <option value="HIGH">High</option>
+                    <option value="MEDIUM">Medium</option>
+                    <option value="LOW">Low</option>
+                    <option value="INFO">Info</option>
+                </select>
+            </div>
+            <div>
+                <label>Category</label><br>
+                <select id="filterCategory" onchange="filterFindings()">
+                    <option value="all">All Categories</option>
+                    <option value="source_code">Source Code</option>
+                    <option value="config">Configuration</option>
+                    <option value="uploaded_file">Uploaded File</option>
+                </select>
+            </div>
+            <div>
+                <label>Search</label><br>
+                <input type="text" id="filterSearch" placeholder="Search findings..." oninput="filterFindings()">
+            </div>
+            <span class="filter-count" id="filterCount">Showing {{ findings|length }} of {{ findings|length }} findings</span>
+        </div>
+
+        <!-- Findings Table -->
+        <table class="findings-table" id="findingsTable">
+            <thead>
+                <tr>
+                    <th onclick="sortTable(0)">Severity ⇅</th>
+                    <th onclick="sortTable(1)">Rule ID ⇅</th>
+                    <th onclick="sortTable(2)">Name ⇅</th>
+                    <th onclick="sortTable(3)">Category ⇅</th>
+                    <th onclick="sortTable(4)">File ⇅</th>
+                    <th>Line</th>
+                    <th>CWE</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for finding in findings %}
+                <tr class="finding-row"
+                    data-severity="{{ finding.severity }}"
+                    data-category="{{ finding.category }}"
+                    data-index="{{ loop.index0 }}"
+                    onclick="showDetail({{ loop.index0 }})">
+                    <td><span class="badge badge-{{ finding.severity }}">{{ finding.severity }}</span></td>
+                    <td style="font-family: monospace; font-size: 12px;">{{ finding.rule_id }}</td>
+                    <td>{{ finding.name }}</td>
+                    <td>{{ finding.category }}</td>
+                    <td style="font-size: 12px; max-width: 250px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="{{ finding.file_path }}">{{ finding.file_path.split('/')[-1] }}</td>
+                    <td>{{ finding.line_start }}</td>
+                    <td><span class="meta-tag">{{ finding.cwe or '—' }}</span></td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+
+        <!-- Footer -->
+        <div class="footer">
+            OJS-SAST v{{ report.scanner_version }} • Generated {{ report.timestamp }} • {{ report.files_scanned }} files scanned • {{ report.rules_loaded }} rules loaded
+        </div>
+    </div>
+
+    <!-- Detail Modal -->
+    <div class="modal-overlay" id="modalOverlay" onclick="if(event.target===this)closeModal()">
+        <div class="modal">
+            <div class="modal-header">
+                <h2 id="modalTitle"></h2>
+                <button class="modal-close" onclick="closeModal()">✕</button>
+            </div>
+            <div id="modalBody"></div>
+        </div>
+    </div>
+
+    <script>
+        const findings = {{ findings | tojson }};
+
+        function filterFindings() {
+            const severity = document.getElementById('filterSeverity').value;
+            const category = document.getElementById('filterCategory').value;
+            const search = document.getElementById('filterSearch').value.toLowerCase();
+            const rows = document.querySelectorAll('.finding-row');
+            let visible = 0;
+
+            rows.forEach(row => {
+                const s = row.dataset.severity;
+                const c = row.dataset.category;
+                const text = row.textContent.toLowerCase();
+                const show = (severity === 'all' || s === severity) &&
+                             (category === 'all' || c === category) &&
+                             (search === '' || text.includes(search));
+                row.style.display = show ? '' : 'none';
+                if (show) visible++;
+            });
+
+            document.getElementById('filterCount').textContent =
+                `Showing ${visible} of ${findings.length} findings`;
+        }
+
+        function sortTable(col) {
+            const table = document.getElementById('findingsTable');
+            const tbody = table.querySelector('tbody');
+            const rows = Array.from(tbody.querySelectorAll('tr'));
+            const sevOrder = {CRITICAL: 0, HIGH: 1, MEDIUM: 2, LOW: 3, INFO: 4};
+
+            rows.sort((a, b) => {
+                let av = a.cells[col].textContent.trim();
+                let bv = b.cells[col].textContent.trim();
+                if (col === 0) { av = sevOrder[av] || 5; bv = sevOrder[bv] || 5; }
+                if (col === 5) { av = parseInt(av) || 0; bv = parseInt(bv) || 0; }
+                if (typeof av === 'number') return av - bv;
+                return av.localeCompare(bv);
+            });
+
+            if (table.dataset.sortCol === String(col) && table.dataset.sortDir === 'asc') {
+                rows.reverse();
+                table.dataset.sortDir = 'desc';
+            } else {
+                table.dataset.sortCol = String(col);
+                table.dataset.sortDir = 'asc';
+            }
+
+            rows.forEach(r => tbody.appendChild(r));
+        }
+
+        function showDetail(idx) {
+            const f = findings[idx];
+            document.getElementById('modalTitle').textContent = f.name;
+
+            let html = `
+                <div class="detail-section">
+                    <span class="badge badge-${f.severity}">${f.severity}</span>
+                    <div class="meta-tags" style="margin-top: 12px;">
+                        ${f.cwe ? `<span class="meta-tag">${f.cwe}</span>` : ''}
+                        ${f.owasp ? `<span class="meta-tag">OWASP ${f.owasp}</span>` : ''}
+                        <span class="meta-tag">${f.category}</span>
+                        <span class="meta-tag">${f.rule_id}</span>
+                    </div>
+                </div>
+                <div class="detail-section">
+                    <h4>Description</h4>
+                    <p>${f.description}</p>
+                </div>
+                <div class="detail-section">
+                    <h4>Location</h4>
+                    <p style="font-family: monospace; font-size: 13px;">${f.file_path}:${f.line_start}</p>
+                </div>`;
+
+            if (f.code_snippet) {
+                html += `
+                <div class="detail-section">
+                    <h4>Code</h4>
+                    <div class="code-block">${escapeHtml(f.code_snippet)}</div>
+                </div>`;
+            }
+
+            if (f.taint_path) {
+                const tp = f.taint_path;
+                html += `
+                <div class="detail-section">
+                    <h4>Taint Path</h4>
+                    <div class="taint-path">
+                        <div class="taint-step">Source: ${escapeHtml(tp.source)} (${tp.source_location})</div>`;
+                if (tp.intermediate_steps) {
+                    tp.intermediate_steps.forEach(step => {
+                        html += `<div class="taint-step">${escapeHtml(step)}</div>`;
+                    });
+                }
+                html += `<div class="taint-step">Sink: ${escapeHtml(tp.sink)} (${tp.sink_location})</div>
+                    </div>
+                </div>`;
+            }
+
+            if (f.remediation) {
+                html += `
+                <div class="detail-section">
+                    <h4>Remediation</h4>
+                    <p>${escapeHtml(f.remediation)}</p>
+                </div>`;
+            }
+
+            if (f.cve_references && f.cve_references.length > 0) {
+                html += `
+                <div class="detail-section">
+                    <h4>CVE References</h4>
+                    <div class="meta-tags">${f.cve_references.map(c => `<span class="meta-tag">${c}</span>`).join('')}</div>
+                </div>`;
+            }
+
+            document.getElementById('modalBody').innerHTML = html;
+            document.getElementById('modalOverlay').classList.add('active');
+        }
+
+        function closeModal() {
+            document.getElementById('modalOverlay').classList.remove('active');
+        }
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        document.addEventListener('keydown', e => { if (e.key === 'Escape') closeModal(); });
+    </script>
+</body>
+</html>

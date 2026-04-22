@@ -1,0 +1,56 @@
+rules:
+  - id: "OJS-SC-RAND-001"
+    name: "Insecure randomness for security tokens"
+    description: >
+      rand() or mt_rand() is used for generating security tokens,
+      which are predictable and not cryptographically secure.
+    severity: "HIGH"
+    category: "source_code"
+    subcategory: "crypto"
+    cwe: "CWE-330"
+    owasp: "A02:2021"
+    pattern_match:
+      type: "regex"
+      patterns:
+        - '(token|secret|key|nonce|csrf)\s*=.*?\b(rand|mt_rand|array_rand)\s*\('
+        - '(rand|mt_rand)\s*\(.*?(token|secret|key|nonce|csrf|session|password)'
+    remediation: >
+      Use random_bytes() or random_int() for cryptographic randomness.
+      In OJS, use PKPSecurity methods for token generation.
+
+  - id: "OJS-SC-RAND-002"
+    name: "Predictable random seed"
+    description: >
+      The random number generator is seeded with a predictable value
+      (time, pid), making generated values predictable.
+    severity: "MEDIUM"
+    category: "source_code"
+    subcategory: "crypto"
+    cwe: "CWE-330"
+    owasp: "A02:2021"
+    pattern_match:
+      type: "regex"
+      patterns:
+        - 'srand\s*\(\s*(time|getmypid|microtime)\s*\('
+        - 'mt_srand\s*\(\s*(time|getmypid|microtime)\s*\('
+    remediation: >
+      Do not manually seed random generators. Use random_bytes()
+      which sources entropy from the OS.
+
+  - id: "OJS-SC-RAND-003"
+    name: "uniqid() used for security purposes"
+    description: >
+      uniqid() generates values based on microsecond timestamps
+      and is not suitable for security tokens.
+    severity: "MEDIUM"
+    category: "source_code"
+    subcategory: "crypto"
+    cwe: "CWE-330"
+    owasp: "A02:2021"
+    pattern_match:
+      type: "regex"
+      patterns:
+        - '(token|secret|key|session|csrf)\s*=\s*uniqid\s*\('
+        - 'uniqid\s*\(.*?(token|secret|password|session)'
+    remediation: >
+      Replace uniqid() with bin2hex(random_bytes(32)) for tokens.
