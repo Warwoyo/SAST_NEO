@@ -35,8 +35,11 @@ class SourceCodeScanner:
         self.files_scanned = 0
         self._finding_counter = 0
 
-    def scan(self) -> list[Finding]:
+    def scan(self, progress_callback=None) -> list[Finding]:
         """Run the full source code scan.
+
+        Args:
+            progress_callback: Optional function(increment_value) to report progress.
 
         Returns:
             List of all findings.
@@ -44,14 +47,11 @@ class SourceCodeScanner:
         self.findings = []
         self.files_scanned = 0
 
-        logger.info(f"Scanning source code in: {self.target_path}")
-
         # Collect all files
         files = list(find_files(self.target_path, ALL_EXTENSIONS, EXCLUDE_DIRS))
         total = len(files)
-        logger.info(f"Found {total} source files to scan")
 
-        for i, filepath in enumerate(files, 1):
+        for filepath in files:
             _, ext = os.path.splitext(filepath)
             ext = ext.lower()
 
@@ -63,14 +63,9 @@ class SourceCodeScanner:
                 self._scan_with_patterns(filepath)
 
             self.files_scanned += 1
+            if progress_callback:
+                progress_callback(1)
 
-            if i % 100 == 0:
-                logger.info(f"  Progress: {i}/{total} files scanned")
-
-        logger.info(
-            f"Source code scan complete: {self.files_scanned} files, "
-            f"{len(self.findings)} findings"
-        )
         return self.findings
 
     def _scan_php_file(self, filepath: str) -> None:

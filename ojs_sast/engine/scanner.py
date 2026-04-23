@@ -42,10 +42,18 @@ class ScanOrchestrator:
         self.upload_dirs = upload_dirs or []
         self.findings: list[Finding] = []
         self.files_scanned = 0
-        self.ojs_info: OJSInstallation | None = None
+        self.ojs_info: OJSInstallation = detect_ojs(self.target_path)
 
-    def run(self) -> ScanReport:
+    def run(
+        self,
+        source_code_callback=None,
+        upload_callback=None
+    ) -> ScanReport:
         """Execute the full scan pipeline.
+
+        Args:
+            source_code_callback: Callback for source code scanning progress.
+            upload_callback: Callback for upload scanning progress.
 
         Returns:
             ScanReport with all findings and metadata.
@@ -53,20 +61,6 @@ class ScanOrchestrator:
         start_time = time.time()
         scan_id = str(uuid.uuid4())[:8]
         timestamp = datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
-
-        logger.info(f"OJS-SAST v{__version__} | Scanning: {self.target_path}")
-        logger.info("=" * 50)
-
-        # Step 1: Detect OJS installation
-        self.ojs_info = detect_ojs(self.target_path)
-        if self.ojs_info.is_valid:
-            logger.info(f"OJS installation detected (v{self.ojs_info.version or 'unknown'})")
-        else:
-            logger.warning("Target may not be a valid OJS installation")
-
-        for warning in self.ojs_info.warnings:
-            logger.warning(warning)
-
         # Step 2: Load rules
         rule_loader = RuleLoader()
         rules_loaded = rule_loader.load_all_builtin_rules()
@@ -75,7 +69,7 @@ class ScanOrchestrator:
         if "source_code" in self.categories:
             logger.info("[source_code] Scanning PHP files...")
             sc_scanner = SourceCodeScanner(rule_loader.rules, self.target_path)
-            sc_findings = sc_scanner.scan()
+            sc_findings = sc_scanner.scan(progress_callback=source_code_callback)
             self.findings.extend(sc_findings)
             self.files_scanned += sc_scanner.files_scanned
 
@@ -95,7 +89,7 @@ class ScanOrchestrator:
             upload_dirs = self._resolve_upload_dirs()
             if upload_dirs:
                 uf_scanner = UploadedFileScanner(rule_loader.rules, upload_dirs)
-                uf_findings = uf_scanner.scan()
+                uf_findings = uf_scanner.scan(progress_callback=upload_callback)
                 self.findings.extend(uf_findings)
                 self.files_scanned += uf_scanner.files_scanned
 
@@ -172,6 +166,116 @@ class ScanOrchestrator:
         # Deduplicate
         return list(dict.fromkeys(dirs))
 
+    def get_scan_totals(self) -> dict[str, int]:
+        """Pre-calculate the total number of files to scan for progress bars.
+
+        Returns:
+            Dictionary with category names and their file counts.
+        """
+        from ojs_sast.categories.source_code.scanner import ALL_EXTENSIONS, EXCLUDE_DIRS
+        from ojs_sast.utils.file_utils import count_files
+
+        totals = {}
+
+        if "source_code" in self.categories:
+            totals["source_code"] = count_files(
+                self.target_path, ALL_EXTENSIONS, EXCLUDE_DIRS
+            )
+
+        if "uploaded_file" in self.categories:
+            upload_dirs = self._resolve_upload_dirs()
+            total_uploads = 0
+            for d in upload_dirs:
+                total_uploads += count_files(d, extensions=None, exclude_dirs=set())
+            totals["uploaded_file"] = total_uploads
+
+        return totals
+
+    def run(
+        self,
+        source_code_callback=None,
+        upload_callback=None
+    ) -> ScanReport:
+        """Execute the full scan pipeline.
+
+        Args:
+            source_code_callback: Callback for source code scanning progress.
+            upload_callback: Callback for upload scanning progress.
+
+        Returns:
+            ScanReport with all findings and metadata.
+        """
+        start_time = time.time()
+        scan_id = str(uuid.uuid4())[:8]
+        timestamp = datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
+
+        logger.info(f"OJS-SAST v{__version__} | Scanning: {self.target_path}")
+        logger.info("=" * 50)
+
+        # Step 1: Detect OJS installation
+        self.ojs_info = detect_ojs(self.target_path)
+        if self.ojs_info.is_valid:
+            logger.info(f"OJS installation detected (v{self.ojs_info.version or 'unknown'})")
+        else:
+            logger.warning("Target may not be a valid OJS installation")
+
+        for warning in self.ojs_info.warnings:
+            logger.warning(warning)
+
+        # Step 2: Load rules
+        rule_loader = RuleLoader()
+        rules_loaded = rule_loader.load_all_builtin_rules()
+
+        # Step 3: Run category scanners
+        if "source_code" in self.categories:
+            sc_scanner = SourceCodeScanner(rule_loader.rules, self.target_path)
+            sc_findings = sc_scanner.scan(progress_callback=source_code_callback)
+            self.findings.extend(sc_findings)
+            self.files_scanned += sc_scanner.files_scanned
+
+        if "config" in self.categories:
+            cfg_scanner = ConfigScanner(
+                rule_loader.rules,
+                self.target_path,
+                nginx_config=self.nginx_config,
+                apache_config=self.apache_config,
+            )
+            cfg_findings = cfg_scanner.scan()
+            self.findings.extend(cfg_findings)
+
+        if "uploaded_file" in self.categories:
+            upload_dirs = self._resolve_upload_dirs()
+            if upload_dirs:
+                uf_scanner = UploadedFileScanner(rule_loader.rules, upload_dirs)
+                uf_findings = uf_scanner.scan(progress_callback=upload_callback)
+                self.findings.extend(uf_findings)
+                self.files_scanned += uf_scanner.files_scanned
+
+        # Step 4: Deduplicate and Filter by severity
+        self.findings = self._deduplicate_findings(self.findings)
+        if self.min_severity != "INFO":
+            self.findings = self._filter_by_severity(self.findings, self.min_severity)
+
+        # Step 5: Build report
+        duration = time.time() - start_time
+        summary = ScanReport.compute_summary(self.findings)
+
+        report = ScanReport(
+            scan_id=scan_id,
+            timestamp=timestamp,
+            ojs_version=self.ojs_info.version if self.ojs_info else None,
+            ojs_path=self.target_path,
+            scan_duration_seconds=round(duration, 2),
+            findings=self.findings,
+            summary=summary,
+            scanner_version=__version__,
+            categories_scanned=self.categories,
+            files_scanned=self.files_scanned,
+            rules_loaded=rules_loaded,
+        )
+
+        return report
+
     @staticmethod
     def _filter_by_severity(findings: list[Finding], min_severity: str) -> list[Finding]:
         """Filter findings by minimum severity level."""
@@ -181,3 +285,21 @@ class ScanOrchestrator:
             f for f in findings
             if severity_order.get(f.severity.value, 0) >= min_level
         ]
+
+    @staticmethod
+    def _deduplicate_findings(findings: list[Finding]) -> list[Finding]:
+        """Remove duplicate findings based on file, line, rule, and category."""
+        seen = set()
+        unique_findings = []
+        for finding in findings:
+            # Create a unique signature for the finding
+            signature = (
+                finding.file_path,
+                finding.line_start,
+                finding.rule_id,
+                finding.category.value,
+            )
+            if signature not in seen:
+                seen.add(signature)
+                unique_findings.append(finding)
+        return unique_findings

@@ -55,8 +55,12 @@ class UploadedFileScanner:
                 except re.error:
                     logger.warning(f"Invalid pattern in rule {rule.id}: {pat_str}")
 
-    def scan(self) -> list[Finding]:
-        """Run the full uploaded file scan."""
+    def scan(self, progress_callback=None) -> list[Finding]:
+        """Run the full uploaded file scan.
+        
+        Args:
+            progress_callback: Optional function(increment_value) to report progress.
+        """
         self.findings = []
         self.files_scanned = 0
 
@@ -65,20 +69,17 @@ class UploadedFileScanner:
             return []
 
         for upload_dir in self.upload_dirs:
-            logger.info(f"Scanning upload directory: {upload_dir}")
-            self._scan_directory(upload_dir)
+            self._scan_directory(upload_dir, progress_callback)
 
-        logger.info(
-            f"Upload scan complete: {self.files_scanned} files, "
-            f"{len(self.findings)} findings"
-        )
         return self.findings
 
-    def _scan_directory(self, directory: str) -> None:
+    def _scan_directory(self, directory: str, progress_callback=None) -> None:
         """Scan all files in an upload directory."""
         for filepath in find_files(directory, extensions=None, exclude_dirs=set()):
             self.files_scanned += 1
             self._scan_file(filepath)
+            if progress_callback:
+                progress_callback(1)
 
     def _scan_file(self, filepath: str) -> None:
         """Scan a single uploaded file."""

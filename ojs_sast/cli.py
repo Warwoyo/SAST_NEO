@@ -54,9 +54,9 @@ def cli() -> None:
     help="Minimum severity level to report.",
 )
 @click.option(
-    "--summary-only",
+    "--list-findings",
     is_flag=True,
-    help="Show summary only (reports are still generated).",
+    help="List all individual findings in the console (warning: can be long).",
 )
 @click.option(
     "--upload-dir",
@@ -75,7 +75,7 @@ def scan(
     nginx_config: str | None,
     apache_config: str | None,
     min_severity: str,
-    summary_only: bool,
+    list_findings: bool,
     upload_dir: tuple[str, ...],
     verbose: bool,
 ) -> None:
@@ -88,7 +88,13 @@ def scan(
     """
     import logging
     if verbose:
-        setup_logger(level=logging.DEBUG)
+        logger.setLevel(logging.DEBUG)
+        for h in logger.handlers:
+            h.setLevel(logging.DEBUG)
+    else:
+        logger.setLevel(logging.WARNING)
+        for h in logger.handlers:
+            h.setLevel(logging.WARNING)
 
     from ojs_sast.engine.scanner import ScanOrchestrator
 
@@ -111,7 +117,36 @@ def scan(
         upload_dirs=upload_dirs,
     )
 
-    report = orchestrator.run()
+    # Print OJS info and any warnings cleanly before starting progress bars
+    if orchestrator.ojs_info.is_valid:
+        click.secho(f"✔ OJS installation detected (v{orchestrator.ojs_info.version or 'unknown'})", fg="green")
+    else:
+        click.secho("⚠ Target may not be a valid OJS installation", fg="yellow")
+
+    for warning in orchestrator.ojs_info.warnings:
+        click.secho(f"⚠ {warning}", fg="yellow")
+    click.echo()
+
+    # Get totals for progress bars
+    totals = orchestrator.get_scan_totals()
+
+    # Run scan with progress bars
+    with click.progressbar(
+        length=totals.get("source_code", 0),
+        label="[source_code] Scanning PHP files",
+        show_pos=True,
+        file=sys.stderr,
+    ) as sc_bar:
+        with click.progressbar(
+            length=totals.get("uploaded_file", 0),
+            label="[uploaded]    Scanning uploads  ",
+            show_pos=True,
+            file=sys.stderr,
+        ) as uf_bar:
+            report = orchestrator.run(
+                source_code_callback=sc_bar.update,
+                upload_callback=uf_bar.update
+            )
 
     # Generate reports
     output_dir = orchestrator.generate_reports(report)
@@ -123,7 +158,7 @@ def scan(
     click.secho("━" * 50, fg="bright_black")
     click.echo()
 
-    if not summary_only:
+    if list_findings:
         for finding in report.findings:
             sev = finding.severity.value
             color = SEVERITY_COLORS.get(sev, "white")
@@ -162,6 +197,11 @@ def scan(
                 click.secho(f"  Fix:  {fix_preview}", fg="green")
 
             click.echo()
+    else:
+        click.echo(f"Total findings detected: {len(report.findings)}")
+        click.echo("Detailed results have been saved to the report files.")
+        click.echo("Use --list-findings to see them here.")
+        click.echo()
 
     # Summary
     click.secho("━" * 50, fg="bright_black")
