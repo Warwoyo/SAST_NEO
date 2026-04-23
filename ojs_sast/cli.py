@@ -4,7 +4,7 @@ import sys
 
 import click
 
-from ojs_sast import __version__
+from ojs_sast.constants import __version__
 from ojs_sast.utils.logger import logger, setup_logger
 
 

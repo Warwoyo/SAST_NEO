@@ -8,7 +8,7 @@ import time
 import uuid
 from datetime import datetime
 
-from ojs_sast import __version__
+from ojs_sast.constants import __version__
 from ojs_sast.categories.config.scanner import ConfigScanner
 from ojs_sast.categories.source_code.scanner import SourceCodeScanner
 from ojs_sast.categories.uploaded_file.scanner import UploadedFileScanner
