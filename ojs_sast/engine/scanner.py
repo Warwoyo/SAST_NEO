@@ -80,6 +80,7 @@ class ScanOrchestrator:
                 self.target_path,
                 nginx_config=self.nginx_config,
                 apache_config=self.apache_config,
+                ojs_config_path=self.ojs_info.config_path if self.ojs_info else None,
             )
             cfg_findings = cfg_scanner.scan()
             self.findings.extend(cfg_findings)
@@ -229,6 +230,7 @@ class ScanOrchestrator:
                 self.target_path,
                 nginx_config=self.nginx_config,
                 apache_config=self.apache_config,
+                ojs_config_path=self.ojs_info.config_path if self.ojs_info else None,
             )
             cfg_findings = cfg_scanner.scan()
             self.findings.extend(cfg_findings)

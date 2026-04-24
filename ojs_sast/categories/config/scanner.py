@@ -25,11 +25,13 @@ class ConfigScanner:
         target_path: str,
         nginx_config: str | None = None,
         apache_config: str | None = None,
+        ojs_config_path: str | None = None,
     ) -> None:
         self.rules = [r for r in rules if r.category == "config"]
         self.target_path = os.path.abspath(target_path)
         self.nginx_config = nginx_config
         self.apache_config = apache_config
+        self.ojs_config_path = ojs_config_path
         self.findings: list[Finding] = []
         self._finding_counter = 0
 
@@ -39,11 +41,14 @@ class ConfigScanner:
         logger.info("Scanning configurations...")
 
         # Scan OJS config
-        config_path = os.path.join(self.target_path, "config.inc.php")
-        if os.path.isfile(config_path):
+        config_path = self.ojs_config_path
+        if not config_path:
+            config_path = os.path.join(self.target_path, "config.inc.php")
+
+        if config_path and os.path.isfile(config_path):
             self._scan_ojs_config(config_path)
         else:
-            logger.warning("Skipping OJS config scan ('config.inc.php' not found)")
+            logger.warning("Skipping OJS config scan ('config.inc.php' not found), continuing to web server configuration scans...")
 
         # Scan Nginx config
         if self.nginx_config and os.path.isfile(self.nginx_config):
