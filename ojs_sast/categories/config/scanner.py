@@ -43,7 +43,7 @@ class ConfigScanner:
         if os.path.isfile(config_path):
             self._scan_ojs_config(config_path)
         else:
-            logger.warning("config.inc.php not found, skipping OJS config scan")
+            logger.warning("Skipping OJS config scan ('config.inc.php' not found)")
 
         # Scan Nginx config
         if self.nginx_config and os.path.isfile(self.nginx_config):

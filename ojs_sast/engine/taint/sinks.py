@@ -1,8 +1,5 @@
-"""Taint sink definitions for OJS-SAST.
-
-Sinks are dangerous functions/operations that must not receive
-tainted data without proper sanitization.
-"""
+"""Taint sink definitions for OJS-SAST."""
+import re
 
 TAINT_SINKS: dict[str, frozenset[str]] = {
     "sql_injection": frozenset([
@@ -16,7 +13,7 @@ TAINT_SINKS: dict[str, frozenset[str]] = {
     "rce": frozenset([
         "exec", "shell_exec", "system", "passthru",
         "popen", "proc_open", "eval", "assert",
-        "preg_replace", "create_function",
+        "create_function",
     ]),
     "file_ops": frozenset([
         "include", "include_once", "require", "require_once",
@@ -44,27 +41,35 @@ TAINT_SINKS: dict[str, frozenset[str]] = {
 
 # Build flat lookup: function_name -> list of sink categories
 _SINK_LOOKUP: dict[str, list[str]] = {}
+# Menyimpan pattern regex yang sudah di-compile agar performa SAST tetap cepat
+_SINK_REGEXES: dict[str, re.Pattern] = {}
+
 for _category, _funcs in TAINT_SINKS.items():
     for _func in _funcs:
         _SINK_LOOKUP.setdefault(_func, []).append(_category)
+        if _func not in _SINK_REGEXES:
+            # \b memastikan hanya kata utuh yang cocok.
+            # Contoh: \bexec\b tidak akan cocok dengan "execute" atau "curl_exec"
+            _SINK_REGEXES[_func] = re.compile(rf'\b{re.escape(_func)}\b')
 
 
 def is_taint_sink(text: str) -> bool:
-    """Check if the given text represents a taint sink."""
-    for func_name in _SINK_LOOKUP:
-        if func_name in text:
+    """Check if the given text represents a taint sink using word boundaries."""
+    for func_name, pattern in _SINK_REGEXES.items():
+        if pattern.search(text):
             return True
     return False
 
 
 def get_sink_categories(text: str) -> list[str]:
-    """Get the vulnerability categories for a sink.
+    """Get the vulnerability categories for a sink using word boundaries.
 
     Returns:
         List of category names (e.g., ['sql_injection', 'ssrf']).
     """
-    categories: list[str] = []
-    for func_name, cats in _SINK_LOOKUP.items():
-        if func_name in text:
-            categories.extend(cats)
-    return list(set(categories))
+    categories: set[str] = set() # Menggunakan set() untuk otomatis mencegah duplikasi
+    for func_name, pattern in _SINK_REGEXES.items():
+        if pattern.search(text):
+            categories.update(_SINK_LOOKUP[func_name])
+            
+    return list(categories)

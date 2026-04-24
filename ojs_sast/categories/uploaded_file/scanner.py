@@ -38,11 +38,15 @@ class UploadedFileScanner:
         # Load patterns from rules
         self._dangerous_patterns: list[tuple[str, re.Pattern]] = []
         self._webshell_patterns: list[tuple[str, re.Pattern]] = []
+        self._dangerous_extension_rules: list[Rule] = []
         self._load_patterns()
 
     def _load_patterns(self) -> None:
         """Load regex patterns from rules."""
         for rule in self.rules:
+            if rule.dangerous_extensions:
+                self._dangerous_extension_rules.append(rule)
+            
             if not rule.pattern_match:
                 continue
             for pat_str in rule.pattern_match.patterns:
@@ -85,25 +89,31 @@ class UploadedFileScanner:
         """Scan a single uploaded file."""
         ext = get_extension(filepath)
 
-        # Check for dangerous extensions
-        is_dangerous, risk_level = is_dangerous_extension(filepath)
-        if is_dangerous:
-            severity = Severity.CRITICAL if risk_level == "critical" else Severity.HIGH
-            self._create_finding(
-                rule_id="OJS-UF-EXT-001",
-                name=f"Dangerous file extension detected ({ext})",
-                description=f"File with dangerous extension '{ext}' found in upload directory. "
-                            f"Risk level: {risk_level}.",
-                severity=severity,
-                filepath=filepath,
-                cwe="CWE-434",
-                owasp="A04:2021",
-                remediation="Delete the file immediately and investigate how it was uploaded.",
-            )
+        # 1. Check for dangerous extensions using Rules
+        is_dangerous = False
+        scan_for_webshell = False
 
-            # If it's a PHP-like file, scan for webshell content
-            if ext in {".php", ".phtml", ".php3", ".php4", ".php5", ".phar"}:
-                self._scan_php_content(filepath)
+        for rule in self._dangerous_extension_rules:
+            for d_ext in rule.dangerous_extensions:
+                if filepath.lower().endswith(d_ext.lower()):
+                    is_dangerous = True
+                    self._create_finding(
+                        rule_id=rule.id,
+                        name=rule.name,
+                        description=rule.description,
+                        severity=Severity.from_string(rule.severity),
+                        filepath=filepath,
+                        cwe=rule.cwe or "",
+                        owasp=rule.owasp or "A04:2021",
+                        remediation=rule.remediation,
+                    )
+                    # If it's a PHP-like file, mark to scan for webshell content
+                    if "php" in d_ext.lower() or "phtml" in d_ext.lower() or "phar" in d_ext.lower():
+                        scan_for_webshell = True
+                    break # One extension match per rule is enough
+
+        if scan_for_webshell:
+            self._scan_php_content(filepath)
 
         # Check for double extensions
         if is_double_extension(filepath):

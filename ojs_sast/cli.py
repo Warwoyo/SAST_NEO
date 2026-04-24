@@ -29,6 +29,47 @@ def cli() -> None:
     pass
 
 
+def check_system_dependencies() -> None:
+    """Check for required system dependencies and prompt for installation."""
+    try:
+        import magic
+    except ImportError:
+        click.echo()
+        click.secho("⚠ Missing System Dependency: libmagic (python-magic)", fg="red", bold=True)
+        click.echo("This dependency is required for deep file type detection during upload scanning.")
+        
+        if click.confirm("Do you want to attempt automatic installation?"):
+            import platform
+            import subprocess
+            system = platform.system().lower()
+            success = False
+            
+            try:
+                if system == "linux":
+                    click.echo("Attempting to install libmagic1 via apt-get...")
+                    subprocess.run(["sudo", "apt-get", "update"], check=True)
+                    subprocess.run(["sudo", "apt-get", "install", "-y", "libmagic1"], check=True)
+                    success = True
+                elif system == "darwin":
+                    click.echo("Attempting to install libmagic via Homebrew...")
+                    subprocess.run(["brew", "install", "libmagic"], check=True)
+                    success = True
+                else:
+                    click.echo(f"Automatic installation not supported on {system}.")
+            except Exception as e:
+                click.secho(f"Installation failed: {e}", fg="red")
+            
+            if success:
+                click.secho("✔ Installation successful!", fg="green")
+                click.echo()
+            else:
+                click.echo("Please install it manually. See README.md for instructions.")
+                sys.exit(1)
+        else:
+            click.echo("Please install it manually to proceed. See README.md for instructions.")
+            sys.exit(1)
+
+
 @cli.command()
 @click.argument("target_path", type=click.Path(exists=True))
 @click.option(
@@ -96,6 +137,8 @@ def scan(
         for h in logger.handlers:
             h.setLevel(logging.WARNING)
 
+    check_system_dependencies()
+
     from ojs_sast.engine.scanner import ScanOrchestrator
 
     categories = list(category) if category else None
@@ -131,22 +174,65 @@ def scan(
     totals = orchestrator.get_scan_totals()
 
     # Run scan with progress bars
-    with click.progressbar(
-        length=totals.get("source_code", 0),
-        label="[source_code] Scanning PHP files",
-        show_pos=True,
-        file=sys.stderr,
-    ) as sc_bar:
-        with click.progressbar(
-            length=totals.get("uploaded_file", 0),
-            label="[uploaded]    Scanning uploads  ",
-            show_pos=True,
-            file=sys.stderr,
-        ) as uf_bar:
-            report = orchestrator.run(
-                source_code_callback=sc_bar.update,
-                upload_callback=uf_bar.update
-            )
+    class ProgressBarManager:
+        def __init__(self, totals):
+            self.totals = totals
+            self.sc_bar = None
+            self.sc_closed = False
+            self.uf_bar = None
+            self.uf_closed = False
+
+        def update_sc(self, n=1):
+            if self.sc_bar is None:
+                self.sc_bar = click.progressbar(
+                    length=self.totals.get("source_code", 0),
+                    label="[source_code] Scanning PHP files",
+                    show_pos=True,
+                    file=sys.stderr,
+                    fill_char="█",
+                    empty_char="░",
+                )
+                self.sc_bar.__enter__()
+            
+            if not self.sc_closed:
+                self.sc_bar.update(n)
+                if self.sc_bar.pos >= self.sc_bar.length:
+                    self.sc_bar.__exit__(None, None, None)
+                    self.sc_closed = True
+                    click.echo()
+
+        def update_uf(self, n=1):
+            if self.uf_bar is None:
+                self.uf_bar = click.progressbar(
+                    length=self.totals.get("uploaded_file", 0),
+                    label="[uploaded]    Scanning uploads  ",
+                    show_pos=True,
+                    file=sys.stderr,
+                    fill_char="█",
+                    empty_char="░",
+                )
+                self.uf_bar.__enter__()
+            
+            if not self.uf_closed:
+                self.uf_bar.update(n)
+                if self.uf_bar.pos >= self.uf_bar.length:
+                    self.uf_bar.__exit__(None, None, None)
+                    self.uf_closed = True
+                    click.echo()
+
+    pb_manager = ProgressBarManager(totals)
+
+    report = orchestrator.run(
+        source_code_callback=pb_manager.update_sc,
+        upload_callback=pb_manager.update_uf
+    )
+
+    if pb_manager.sc_bar and not pb_manager.sc_closed:
+        pb_manager.sc_bar.__exit__(None, None, None)
+        click.echo()
+    if pb_manager.uf_bar and not pb_manager.uf_closed:
+        pb_manager.uf_bar.__exit__(None, None, None)
+        click.echo()
 
     # Generate reports
     output_dir = orchestrator.generate_reports(report)

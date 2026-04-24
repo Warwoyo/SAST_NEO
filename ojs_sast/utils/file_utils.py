@@ -88,7 +88,8 @@ def read_file_safe(filepath: str, encoding: str = "utf-8") -> str | None:
         with open(filepath, "r", encoding=encoding, errors="replace") as f:
             return f.read()
     except (OSError, PermissionError) as e:
-        logger.warning(f"Cannot read file {filepath}: {e}")
+        error_msg = getattr(e, "strerror", str(e).split(":")[0])
+        logger.warning(f"Cannot read file '{filepath}': {error_msg}")
         return None
 
 
@@ -106,7 +107,8 @@ def read_file_bytes(filepath: str, max_bytes: int | None = None) -> bytes | None
         with open(filepath, "rb") as f:
             return f.read(max_bytes) if max_bytes else f.read()
     except (OSError, PermissionError) as e:
-        logger.warning(f"Cannot read file {filepath}: {e}")
+        error_msg = getattr(e, "strerror", str(e).split(":")[0])
+        logger.warning(f"Cannot read file '{filepath}': {error_msg}")
         return None
 
 

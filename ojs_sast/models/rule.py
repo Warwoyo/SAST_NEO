@@ -43,9 +43,12 @@ class Rule:
     owasp: Optional[str] = None
     cve_references: list[str] = field(default_factory=list)
     ojs_versions_affected: str = "all"
+    dangerous_extensions: list[str] = field(default_factory=list)
     taint_analysis: Optional[TaintRuleConfig] = None
     pattern_match: Optional[PatternMatchConfig] = None
     config_check: Optional[ConfigCheckCondition] = None
+    include_paths: list[str] = field(default_factory=list)
+    exclude_paths: list[str] = field(default_factory=list)
     remediation: str = ""
     references: list[str] = field(default_factory=list)
     false_positive_notes: str = ""
@@ -93,9 +96,12 @@ class Rule:
             owasp=data.get("owasp"),
             cve_references=data.get("cve_references", []),
             ojs_versions_affected=data.get("ojs_versions_affected", "all"),
+            dangerous_extensions=data.get("dangerous_extensions", []),
             taint_analysis=taint_config,
             pattern_match=pattern_config,
             config_check=config_check,
+            include_paths=data.get("include_paths", []),
+            exclude_paths=data.get("exclude_paths", []),
             remediation=data.get("remediation", ""),
             references=data.get("references", []),
             false_positive_notes=data.get("false_positive_notes", ""),
@@ -113,6 +119,9 @@ class Rule:
             "owasp": self.owasp,
             "cve_references": self.cve_references,
             "ojs_versions_affected": self.ojs_versions_affected,
+            "dangerous_extensions": self.dangerous_extensions,
+            "include_paths": self.include_paths,
+            "exclude_paths": self.exclude_paths,
             "remediation": self.remediation,
             "references": self.references,
             "false_positive_notes": self.false_positive_notes,

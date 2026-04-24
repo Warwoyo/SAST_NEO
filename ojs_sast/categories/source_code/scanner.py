@@ -6,6 +6,7 @@ and YAML rule-based pattern matching.
 
 import os
 import re
+import fnmatch
 import uuid
 
 from ojs_sast.categories.source_code.php_parser import parse_php_file
@@ -91,6 +92,9 @@ class SourceCodeScanner:
             return
 
         for rule in self.rules:
+            if not self._should_run_rule(rule, filepath):
+                continue
+
             if not rule.pattern_match or not rule.pattern_match.patterns:
                 continue
 
@@ -133,3 +137,26 @@ class SourceCodeScanner:
 
                 except re.error as e:
                     logger.warning(f"Invalid regex in rule {rule.id}: {e}")
+
+    def _should_run_rule(self, rule: Rule, filepath: str) -> bool:
+        """Check if a rule should be run against a specific file based on path filters."""
+        # Relative path for matching
+        rel_path = os.path.relpath(filepath, self.target_path)
+
+        # 1. Check exclude_paths (Blacklist takes precedence)
+        if rule.exclude_paths:
+            for pattern in rule.exclude_paths:
+                if fnmatch.fnmatch(rel_path, pattern) or fnmatch.fnmatch(filepath, pattern):
+                    return False
+
+        # 2. Check include_paths (Whitelist)
+        if rule.include_paths:
+            included = False
+            for pattern in rule.include_paths:
+                if fnmatch.fnmatch(rel_path, pattern) or fnmatch.fnmatch(filepath, pattern):
+                    included = True
+                    break
+            if not included:
+                return False
+
+        return True

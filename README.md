@@ -13,12 +13,23 @@ A comprehensive SAST tool specifically designed to analyze the security of [Open
 
 ## Installation
 
+For the best experience and to avoid conflicts with system Python packages, it is highly recommended to run OJS-SAST within a virtual environment.
+
 ```bash
-# Clone the repository
+# 1. Clone the repository
 git clone https://github.com/ojs-sast/ojs-sast.git
 cd ojs-sast
 
-# Install in development mode
+# 2. Create a virtual environment
+python3 -m venv .venv
+
+# 3. Activate the virtual environment
+# On Linux/macOS:
+source .venv/bin/activate
+# On Windows:
+# .venv\Scripts\activate
+
+# 4. Install the application and dependencies
 pip install -e ".[dev]"
 ```
 
@@ -106,6 +117,25 @@ Rules are mapped to industry security standards:
 | **CWE** | CWE-22, CWE-78, CWE-79, CWE-89, CWE-94, CWE-330, CWE-434, CWE-502, CWE-611, CWE-798, CWE-918 |
 | **OWASP Top 10 (2021)** | A01-A10 |
 | **OJS CVEs** | CVE-2020-28113, CVE-2021-27231, CVE-2022-24822, CVE-2023-33970 |
+
+## Rule Classification Codes
+
+To help you quickly understand the type of finding, OJS-SAST uses a standardized Rule ID format: `[PREFIX]-[CATEGORY]-[VULN]-[SEQUENCE]` (e.g., `OJS-SC-SQLI-001`).
+
+*   **PREFIX**: `OJS` (Standard tool prefix)
+*   **CATEGORY**:
+    *   `SC`: Source Code Scanning
+    *   `CFG`: Configuration Auditing
+    *   `UF`: Uploaded File Scanning
+*   **VULN** (Vulnerability Type):
+    *   `SQLI`: SQL Injection
+    *   `XSS`: Cross-Site Scripting
+    *   `RCE`: Remote Code Execution
+    *   `FILE`: File Operation (Path Traversal, Inclusion)
+    *   `AUTH`: Authentication & Authorization
+    *   `OJS`: OJS-Specific Vulnerabilities
+    *   `MISC`: Miscellaneous (SSRF, Deserialization)
+*   **SEQUENCE**: A unique 3-digit identifier for the specific rule.
 
 ## Testing
 

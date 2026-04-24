@@ -212,16 +212,6 @@ class ScanOrchestrator:
         logger.info(f"OJS-SAST v{__version__} | Scanning: {self.target_path}")
         logger.info("=" * 50)
 
-        # Step 1: Detect OJS installation
-        self.ojs_info = detect_ojs(self.target_path)
-        if self.ojs_info.is_valid:
-            logger.info(f"OJS installation detected (v{self.ojs_info.version or 'unknown'})")
-        else:
-            logger.warning("Target may not be a valid OJS installation")
-
-        for warning in self.ojs_info.warnings:
-            logger.warning(warning)
-
         # Step 2: Load rules
         rule_loader = RuleLoader()
         rules_loaded = rule_loader.load_all_builtin_rules()
