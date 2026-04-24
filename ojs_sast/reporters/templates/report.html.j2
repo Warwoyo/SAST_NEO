@@ -333,23 +333,23 @@
 
         <div class="summary-grid">
             <div class="summary-card sev-critical">
-                <div class="count">{{ summary.CRITICAL }}</div>
+                <div class="count" id="summary-count-CRITICAL">{{ summary.CRITICAL }}</div>
                 <div class="label">Critical</div>
             </div>
             <div class="summary-card sev-high">
-                <div class="count">{{ summary.HIGH }}</div>
+                <div class="count" id="summary-count-HIGH">{{ summary.HIGH }}</div>
                 <div class="label">High</div>
             </div>
             <div class="summary-card sev-medium">
-                <div class="count">{{ summary.MEDIUM }}</div>
+                <div class="count" id="summary-count-MEDIUM">{{ summary.MEDIUM }}</div>
                 <div class="label">Medium</div>
             </div>
             <div class="summary-card sev-low">
-                <div class="count">{{ summary.LOW }}</div>
+                <div class="count" id="summary-count-LOW">{{ summary.LOW }}</div>
                 <div class="label">Low</div>
             </div>
             <div class="summary-card sev-info">
-                <div class="count">{{ summary.INFO }}</div>
+                <div class="count" id="summary-count-INFO">{{ summary.INFO }}</div>
                 <div class="label">Info</div>
             </div>
         </div>
@@ -357,29 +357,29 @@
         <div class="charts-row">
             <div class="chart-card">
                 <h3>Findings Severity Distribution</h3>
-                <div class="bar-chart">
+                <div class="bar-chart" id="chart-severity">
                     {% set total = (summary.CRITICAL + summary.HIGH + summary.MEDIUM + summary.LOW + summary.INFO) or 1 %}
                     {% for sev, color in [('CRITICAL', '#dc2626'), ('HIGH', '#ea580c'), ('MEDIUM', '#d97706'), ('LOW', '#3b82f6'), ('INFO', '#6b7280')] %}
                     <div class="bar-row">
                         <span class="bar-label">{{ sev }}</span>
                         <div class="bar-track">
-                            <div class="bar-fill" style="width: {{ (summary[sev] / total * 100)|round(1) }}%; background: {{ color }};"></div>
+                            <div class="bar-fill" id="bar-fill-sev-{{ sev }}" style="width: {{ (summary[sev] / total * 100)|round(1) }}%; background: {{ color }};"></div>
                         </div>
-                        <span class="bar-value" style="color: {{ color }};">{{ summary[sev] }}</span>
+                        <span class="bar-value" id="bar-val-sev-{{ sev }}" style="color: {{ color }};">{{ summary[sev] }}</span>
                     </div>
                     {% endfor %}
                 </div>
             </div>
             <div class="chart-card">
                 <h3>Findings by Category</h3>
-                <div class="bar-chart">
+                <div class="bar-chart" id="chart-category">
                     {% for cat, cat_findings in by_category.items() %}
                     <div class="bar-row">
                         <span class="bar-label">{{ cat|capitalize }}</span>
                         <div class="bar-track">
-                            <div class="bar-fill" style="width: {{ (cat_findings|length / total * 100)|round(1) }}%; background: #4b5563;"></div>
+                            <div class="bar-fill" id="bar-fill-cat-{{ cat }}" style="width: {{ (cat_findings|length / total * 100)|round(1) }}%; background: #4b5563;"></div>
                         </div>
-                        <span class="bar-value">{{ cat_findings|length }}</span>
+                        <span class="bar-value" id="bar-val-cat-{{ cat }}">{{ cat_findings|length }}</span>
                     </div>
                     {% endfor %}
                 </div>
@@ -525,6 +525,11 @@
             const search = document.getElementById('filterSearch').value.toLowerCase();
             const rows = document.querySelectorAll('.finding-row');
             let visible = 0;
+            
+            let visibleCounts = {
+                severity: { CRITICAL: 0, HIGH: 0, MEDIUM: 0, LOW: 0, INFO: 0 },
+                category: {}
+            };
 
             rows.forEach(row => {
                 const s = row.dataset.severity;
@@ -540,10 +545,40 @@
                              (search === '' || text.includes(search));
                 
                 row.style.display = show ? '' : 'none';
-                if (show) visible++;
+                if (show) {
+                    visible++;
+                    if (visibleCounts.severity[s] !== undefined) visibleCounts.severity[s]++;
+                    visibleCounts.category[c] = (visibleCounts.category[c] || 0) + 1;
+                }
             });
 
             document.getElementById('filterCount').textContent = `Showing ${visible} of ${findings.length} findings`;
+            updateCharts(visibleCounts, visible || 1);
+        }
+
+        function updateCharts(counts, totalVisible) {
+            for (const sev in counts.severity) {
+                const countElem = document.getElementById(`summary-count-${sev}`);
+                if (countElem) countElem.textContent = counts.severity[sev];
+                
+                const barFill = document.getElementById(`bar-fill-sev-${sev}`);
+                const barVal = document.getElementById(`bar-val-sev-${sev}`);
+                if (barFill && barVal) {
+                    const pct = (counts.severity[sev] / totalVisible * 100).toFixed(1);
+                    barFill.style.width = `${pct}%`;
+                    barVal.textContent = counts.severity[sev];
+                }
+            }
+            
+            document.querySelectorAll('[id^="bar-fill-cat-"]').forEach(fillElem => {
+                const cat = fillElem.id.replace('bar-fill-cat-', '');
+                const valElem = document.getElementById(`bar-val-cat-${cat}`);
+                const count = counts.category[cat] || 0;
+                const pct = (count / totalVisible * 100).toFixed(1);
+                
+                fillElem.style.width = `${pct}%`;
+                if (valElem) valElem.textContent = count;
+            });
         }
 
         function resetFilters() {
