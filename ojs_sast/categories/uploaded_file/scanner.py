@@ -38,11 +38,15 @@ class UploadedFileScanner:
         # Load patterns from rules
         self._dangerous_patterns: list[tuple[str, re.Pattern]] = []
         self._webshell_patterns: list[tuple[str, re.Pattern]] = []
+        self._dangerous_extension_rules: list[Rule] = []
         self._load_patterns()
 
     def _load_patterns(self) -> None:
         """Load regex patterns from rules."""
         for rule in self.rules:
+            if rule.dangerous_extensions:
+                self._dangerous_extension_rules.append(rule)
+            
             if not rule.pattern_match:
                 continue
             for pat_str in rule.pattern_match.patterns:
@@ -55,8 +59,12 @@ class UploadedFileScanner:
                 except re.error:
                     logger.warning(f"Invalid pattern in rule {rule.id}: {pat_str}")
 
-    def scan(self) -> list[Finding]:
-        """Run the full uploaded file scan."""
+    def scan(self, progress_callback=None) -> list[Finding]:
+        """Run the full uploaded file scan.
+        
+        Args:
+            progress_callback: Optional function(increment_value) to report progress.
+        """
         self.findings = []
         self.files_scanned = 0
 
@@ -65,44 +73,47 @@ class UploadedFileScanner:
             return []
 
         for upload_dir in self.upload_dirs:
-            logger.info(f"Scanning upload directory: {upload_dir}")
-            self._scan_directory(upload_dir)
+            self._scan_directory(upload_dir, progress_callback)
 
-        logger.info(
-            f"Upload scan complete: {self.files_scanned} files, "
-            f"{len(self.findings)} findings"
-        )
         return self.findings
 
-    def _scan_directory(self, directory: str) -> None:
+    def _scan_directory(self, directory: str, progress_callback=None) -> None:
         """Scan all files in an upload directory."""
         for filepath in find_files(directory, extensions=None, exclude_dirs=set()):
             self.files_scanned += 1
             self._scan_file(filepath)
+            if progress_callback:
+                progress_callback(1)
 
     def _scan_file(self, filepath: str) -> None:
         """Scan a single uploaded file."""
         ext = get_extension(filepath)
 
-        # Check for dangerous extensions
-        is_dangerous, risk_level = is_dangerous_extension(filepath)
-        if is_dangerous:
-            severity = Severity.CRITICAL if risk_level == "critical" else Severity.HIGH
-            self._create_finding(
-                rule_id="OJS-UF-EXT-001",
-                name=f"Dangerous file extension detected ({ext})",
-                description=f"File with dangerous extension '{ext}' found in upload directory. "
-                            f"Risk level: {risk_level}.",
-                severity=severity,
-                filepath=filepath,
-                cwe="CWE-434",
-                owasp="A04:2021",
-                remediation="Delete the file immediately and investigate how it was uploaded.",
-            )
+        # 1. Check for dangerous extensions using Rules
+        is_dangerous = False
+        scan_for_webshell = False
 
-            # If it's a PHP-like file, scan for webshell content
-            if ext in {".php", ".phtml", ".php3", ".php4", ".php5", ".phar"}:
-                self._scan_php_content(filepath)
+        for rule in self._dangerous_extension_rules:
+            for d_ext in rule.dangerous_extensions:
+                if filepath.lower().endswith(d_ext.lower()):
+                    is_dangerous = True
+                    self._create_finding(
+                        rule_id=rule.id,
+                        name=rule.name,
+                        description=rule.description,
+                        severity=Severity.from_string(rule.severity),
+                        filepath=filepath,
+                        cwe=rule.cwe or "",
+                        owasp=rule.owasp or "A04:2021",
+                        remediation=rule.remediation,
+                    )
+                    # If it's a PHP-like file, mark to scan for webshell content
+                    if "php" in d_ext.lower() or "phtml" in d_ext.lower() or "phar" in d_ext.lower():
+                        scan_for_webshell = True
+                    break # One extension match per rule is enough
+
+        if scan_for_webshell:
+            self._scan_php_content(filepath)
 
         # Check for double extensions
         if is_double_extension(filepath):

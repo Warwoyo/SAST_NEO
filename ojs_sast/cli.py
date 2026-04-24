@@ -4,7 +4,7 @@ import sys
 
 import click
 
-from ojs_sast import __version__
+from ojs_sast.constants import __version__
 from ojs_sast.utils.logger import logger, setup_logger
 
 
@@ -27,6 +27,47 @@ def cli() -> None:
     source code, configurations, and uploaded files.
     """
     pass
+
+
+def check_system_dependencies() -> None:
+    """Check for required system dependencies and prompt for installation."""
+    try:
+        import magic
+    except ImportError:
+        click.echo()
+        click.secho("⚠ Missing System Dependency: libmagic (python-magic)", fg="red", bold=True)
+        click.echo("This dependency is required for deep file type detection during upload scanning.")
+        
+        if click.confirm("Do you want to attempt automatic installation?"):
+            import platform
+            import subprocess
+            system = platform.system().lower()
+            success = False
+            
+            try:
+                if system == "linux":
+                    click.echo("Attempting to install libmagic1 via apt-get...")
+                    subprocess.run(["sudo", "apt-get", "update"], check=True)
+                    subprocess.run(["sudo", "apt-get", "install", "-y", "libmagic1"], check=True)
+                    success = True
+                elif system == "darwin":
+                    click.echo("Attempting to install libmagic via Homebrew...")
+                    subprocess.run(["brew", "install", "libmagic"], check=True)
+                    success = True
+                else:
+                    click.echo(f"Automatic installation not supported on {system}.")
+            except Exception as e:
+                click.secho(f"Installation failed: {e}", fg="red")
+            
+            if success:
+                click.secho("✔ Installation successful!", fg="green")
+                click.echo()
+            else:
+                click.echo("Please install it manually. See README.md for instructions.")
+                sys.exit(1)
+        else:
+            click.echo("Please install it manually to proceed. See README.md for instructions.")
+            sys.exit(1)
 
 
 @cli.command()
@@ -54,9 +95,9 @@ def cli() -> None:
     help="Minimum severity level to report.",
 )
 @click.option(
-    "--summary-only",
+    "--list-findings",
     is_flag=True,
-    help="Show summary only (reports are still generated).",
+    help="List all individual findings in the console (warning: can be long).",
 )
 @click.option(
     "--upload-dir",
@@ -75,7 +116,7 @@ def scan(
     nginx_config: str | None,
     apache_config: str | None,
     min_severity: str,
-    summary_only: bool,
+    list_findings: bool,
     upload_dir: tuple[str, ...],
     verbose: bool,
 ) -> None:
@@ -88,7 +129,15 @@ def scan(
     """
     import logging
     if verbose:
-        setup_logger(level=logging.DEBUG)
+        logger.setLevel(logging.DEBUG)
+        for h in logger.handlers:
+            h.setLevel(logging.DEBUG)
+    else:
+        logger.setLevel(logging.WARNING)
+        for h in logger.handlers:
+            h.setLevel(logging.WARNING)
+
+    check_system_dependencies()
 
     from ojs_sast.engine.scanner import ScanOrchestrator
 
@@ -111,7 +160,79 @@ def scan(
         upload_dirs=upload_dirs,
     )
 
-    report = orchestrator.run()
+    # Print OJS info and any warnings cleanly before starting progress bars
+    if orchestrator.ojs_info.is_valid:
+        click.secho(f"✔ OJS installation detected (v{orchestrator.ojs_info.version or 'unknown'})", fg="green")
+    else:
+        click.secho("⚠ Target may not be a valid OJS installation", fg="yellow")
+
+    for warning in orchestrator.ojs_info.warnings:
+        click.secho(f"⚠ {warning}", fg="yellow")
+    click.echo()
+
+    # Get totals for progress bars
+    totals = orchestrator.get_scan_totals()
+
+    # Run scan with progress bars
+    class ProgressBarManager:
+        def __init__(self, totals):
+            self.totals = totals
+            self.sc_bar = None
+            self.sc_closed = False
+            self.uf_bar = None
+            self.uf_closed = False
+
+        def update_sc(self, n=1):
+            if self.sc_bar is None:
+                self.sc_bar = click.progressbar(
+                    length=self.totals.get("source_code", 0),
+                    label="[source_code] Scanning PHP files",
+                    show_pos=True,
+                    file=sys.stderr,
+                    fill_char="█",
+                    empty_char="░",
+                )
+                self.sc_bar.__enter__()
+            
+            if not self.sc_closed:
+                self.sc_bar.update(n)
+                if self.sc_bar.pos >= self.sc_bar.length:
+                    self.sc_bar.__exit__(None, None, None)
+                    self.sc_closed = True
+                    click.echo()
+
+        def update_uf(self, n=1):
+            if self.uf_bar is None:
+                self.uf_bar = click.progressbar(
+                    length=self.totals.get("uploaded_file", 0),
+                    label="[uploaded]    Scanning uploads  ",
+                    show_pos=True,
+                    file=sys.stderr,
+                    fill_char="█",
+                    empty_char="░",
+                )
+                self.uf_bar.__enter__()
+            
+            if not self.uf_closed:
+                self.uf_bar.update(n)
+                if self.uf_bar.pos >= self.uf_bar.length:
+                    self.uf_bar.__exit__(None, None, None)
+                    self.uf_closed = True
+                    click.echo()
+
+    pb_manager = ProgressBarManager(totals)
+
+    report = orchestrator.run(
+        source_code_callback=pb_manager.update_sc,
+        upload_callback=pb_manager.update_uf
+    )
+
+    if pb_manager.sc_bar and not pb_manager.sc_closed:
+        pb_manager.sc_bar.__exit__(None, None, None)
+        click.echo()
+    if pb_manager.uf_bar and not pb_manager.uf_closed:
+        pb_manager.uf_bar.__exit__(None, None, None)
+        click.echo()
 
     # Generate reports
     output_dir = orchestrator.generate_reports(report)
@@ -123,7 +244,7 @@ def scan(
     click.secho("━" * 50, fg="bright_black")
     click.echo()
 
-    if not summary_only:
+    if list_findings:
         for finding in report.findings:
             sev = finding.severity.value
             color = SEVERITY_COLORS.get(sev, "white")
@@ -162,6 +283,11 @@ def scan(
                 click.secho(f"  Fix:  {fix_preview}", fg="green")
 
             click.echo()
+    else:
+        click.echo(f"Total findings detected: {len(report.findings)}")
+        click.echo("Detailed results have been saved to the report files.")
+        click.echo("Use --list-findings to see them here.")
+        click.echo()
 
     # Summary
     click.secho("━" * 50, fg="bright_black")

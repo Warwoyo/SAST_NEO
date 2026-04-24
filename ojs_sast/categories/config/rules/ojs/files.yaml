@@ -40,3 +40,42 @@ checks:
       patterns:
         - 'public_files_dir\s*=\s*\S+'
     remediation: "Ensure public_files_dir has web server rules to prevent PHP execution."
+
+  - id: "OJS-CFG-FILES-004"
+    name: "Default upload directory location"
+    description: "The files_dir uses the default name 'files'. If this is within the web root, it may be accessible to the public."
+    severity: "MEDIUM"
+    category: "config"
+    subcategory: "ojs"
+    cwe: "CWE-552"
+    owasp: "A01:2021"
+    config_check:
+      field: "files.files_dir"
+      condition: "equals"
+      value: "files"
+    remediation: "Move files_dir outside the web server root and use a unique, non-obvious directory name."
+
+
+  - id: "OJS-CFG-FILES-005"
+    name: "Allowed Upload File Extensions Too Permissive"
+    description: >
+      The configuration permits uploading of executable or dangerous file types
+      (e.g., .php, .phtml, .phar, .asp, .exe). This directly enables Remote Code
+      Execution via file upload attacks (CVE-2012-1468, CVE-2023-47271).
+    severity: "CRITICAL"
+    category: "config"
+    subcategory: "file_upload"
+    cwe: "CWE-434"
+    owasp: "A03:2021"
+    cve_references:
+      - "CVE-2012-1468"
+      - "CVE-2023-47271"
+    config_check:
+      field: "allowed_mime_types"
+      condition: "contains"
+      value: "php"
+    remediation: >
+      Remove all executable extensions from allowed_mime_types. Restrict uploads to
+      known safe document and image types: pdf, doc, docx, odt, jpg, jpeg, png, gif,
+      webp, zip, tar.gz. Store uploaded files outside the webroot or in a directory
+      with server-level PHP execution disabled.

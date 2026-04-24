@@ -6,7 +6,7 @@ Generates reports compatible with GitHub Code Scanning and VS Code SARIF Viewer.
 import json
 import os
 
-from ojs_sast import __version__
+from ojs_sast.constants import __version__
 from ojs_sast.models.finding import Finding
 from ojs_sast.models.report import ScanReport
 from ojs_sast.utils.logger import logger

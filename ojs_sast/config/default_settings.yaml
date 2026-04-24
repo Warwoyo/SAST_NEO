@@ -1,9 +1,9 @@
 # OJS-SAST Default Configuration
 
 scanner:
-  max_file_size_mb: 10
+  max_file_size_mb: 1000
   max_files: 50000
-  timeout_seconds: 300
+  timeout_seconds: 3500
 
   exclude_dirs:
     - cache
