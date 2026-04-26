@@ -4,8 +4,24 @@ Implements forward data-flow analysis to track tainted data from
 sources through variable assignments to dangerous sinks.
 """
 
+import re
 from dataclasses import dataclass, field
 from typing import Any
+
+# Database fetch functions — output is trusted (not first-order user input).
+# If a variable is assigned from one of these, its taint chain is truncated.
+DB_FETCH_FUNCTIONS = frozenset([
+    "mysql_fetch_row", "mysql_fetch_assoc", "mysql_fetch_array",
+    "mysql_fetch_object", "mysqli_fetch_row", "mysqli_fetch_assoc",
+    "mysqli_fetch_array", "mysqli_fetch_object",
+    "fetch", "fetchRow", "fetchAssoc", "fetchAll",
+    "retrieve",
+])
+
+# OOP objects that are safe when calling generic sink names like execute().
+_SAFE_OBJECT_KEYWORDS = frozenset([
+    "Form", "Filter", "Plugin", "Handler", "Validator",
+])
 
 from ojs_sast.engine.ast_walker import (
     find_nodes_by_types,
@@ -140,6 +156,15 @@ class TaintAnalyzer:
 
                 value_text = get_node_text(value_node, self.source_bytes)
 
+                # Taint Truncation: if the value comes from a DB fetch
+                # function, do NOT propagate taint — DB output is trusted.
+                is_db_fetch = any(dbf in value_text for dbf in DB_FETCH_FUNCTIONS)
+                if is_db_fetch:
+                    # If the target was previously tainted, un-taint it.
+                    if target in self.tainted_vars:
+                        del self.tainted_vars[target]
+                    continue
+
                 # Check if value contains any tainted variables
                 vars_in_value = find_variables_in_node(value_node, self.source_bytes)
                 for var in vars_in_value:
@@ -194,10 +219,19 @@ class TaintAnalyzer:
             if not is_taint_sink(func_name):
                 continue
 
+            # OOP Context Awareness: skip safe object types calling
+            # generic method names (e.g., $form->execute()).
+            if node.type == "member_call_expression":
+                obj_node = node.child_by_field_name("object")
+                if obj_node:
+                    obj_text = get_node_text(obj_node, self.source_bytes)
+                    if any(kw in obj_text for kw in _SAFE_OBJECT_KEYWORDS):
+                        continue
+
             # Get sink categories
             sink_cats = get_sink_categories(func_name)
 
-            # Inline Sanitization Detection
+            # Inline Sanitization Detection (full call text)
             if is_sanitizer(full_call):
                 if any(is_effective_sanitizer(full_call, sc) for sc in sink_cats):
                     continue
@@ -207,13 +241,20 @@ class TaintAnalyzer:
             args_node = node.child_by_field_name("arguments")
 
             if args_node:
+                args_text = get_node_text(args_node, self.source_bytes)
+
+                # Strengthened Inline Sanitization: check argument text.
+                # Catches nested patterns like mysql_query(mysql_real_escape_string($d))
+                if is_sanitizer(args_text):
+                    if any(is_effective_sanitizer(args_text, sc) for sc in sink_cats):
+                        continue
+
                 arg_vars = find_variables_in_node(args_node, self.source_bytes)
                 for var in arg_vars:
                     if var in self.tainted_vars:
                         tainted = self.tainted_vars[var]
 
                         # Logical Validation Awareness
-                        import re
                         var_escaped = re.escape(var.strip("$"))
                         # Check if it's inside isset()
                         if re.search(rf'isset\s*\([^)]*\${var_escaped}\b', full_call):
@@ -231,10 +272,10 @@ class TaintAnalyzer:
                             if effective:
                                 continue
 
-                        # OJS DAO Bindings Check: if func is retrieve/update,
+                        # OJS DAO Bindings Check: if func is retrieve,
                         # ensure the tainted var is in the SQL string (first arg).
                         # If it's only in the bindings (subsequent args), it's safe.
-                        if func_name in ("retrieve", "update") and "sql_injection" in sink_cats:
+                        if func_name == "retrieve" and "sql_injection" in sink_cats:
                             first_arg_node = None
                             for child in args_node.children:
                                 if child.type == "argument":
@@ -243,7 +284,7 @@ class TaintAnalyzer:
                             if first_arg_node:
                                 vars_in_first = find_variables_in_node(first_arg_node, self.source_bytes)
                                 if var not in vars_in_first:
-                                    continue # Safe context, bound parameter
+                                    continue  # Safe context, bound parameter
 
                         line = get_line_number(node)
                         self._create_finding(
@@ -260,11 +301,11 @@ class TaintAnalyzer:
 
         for node in echo_nodes:
             node_text = get_node_text(node, self.source_bytes)
-            
+
             # Inline Sanitization Detection for echo/print
             if is_sanitizer(node_text) and is_effective_sanitizer(node_text, "xss"):
                 continue
-                
+
             vars_in_echo = find_variables_in_node(node, self.source_bytes)
 
             for var in vars_in_echo:
@@ -272,7 +313,6 @@ class TaintAnalyzer:
                     tainted = self.tainted_vars[var]
 
                     # Logical Validation Awareness
-                    import re
                     var_escaped = re.escape(var.strip("$"))
                     if re.search(rf'isset\s*\([^)]*\${var_escaped}\b', node_text):
                         continue

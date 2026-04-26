@@ -3,8 +3,8 @@ import re
 
 TAINT_SINKS: dict[str, frozenset[str]] = {
     "sql_injection": frozenset([
-        "query", "retrieve", "update", "mysql_query",
-        "mysqli_query", "pg_query", "execute",
+        "query", "retrieve", "mysql_query",
+        "mysqli_query", "pg_query",
     ]),
     "xss": frozenset([
         "echo", "print", "printf",

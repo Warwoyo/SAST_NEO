@@ -56,8 +56,15 @@ TAINT_SOURCES: dict[str, frozenset[str]] = {
 }
 
 # Flat set of all source identifiers for quick lookup
+# NOTE: DATABASE_READS excluded — DB output is not first-order user input.
 ALL_SOURCE_IDENTIFIERS = (
-    SUPERGLOBALS | OJS_REQUEST_METHODS | DATABASE_READS | FILE_READS | ENV_VARS
+    SUPERGLOBALS | OJS_REQUEST_METHODS | FILE_READS | ENV_VARS
+)
+
+import re
+_STRING_LITERAL_RE = re.compile(
+    r"^\s*['\"]"    # starts with a quote (single or double)
+    r"|^\s*<<<"      # heredoc / nowdoc
 )
 
 
@@ -70,6 +77,10 @@ def is_taint_source(text: str) -> bool:
     Returns:
         True if the text matches a known taint source.
     """
+    # Exclude hardcoded string literals — they are not user-controlled.
+    if _STRING_LITERAL_RE.match(text):
+        return False
+
     # Direct match against superglobals
     for sg in SUPERGLOBALS:
         if sg in text:

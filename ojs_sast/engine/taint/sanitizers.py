@@ -7,6 +7,7 @@ removing or neutralizing the taint.
 SANITIZERS: dict[str, frozenset[str]] = {
     "sql": frozenset([
         "escapeString", "quote", "mysqli_real_escape_string",
+        "mysql_real_escape_string", "mysql_escape_string",
         "intval", "floatval", "is_numeric",
         "prepare", "bindParam", "bindValue",
     ]),
