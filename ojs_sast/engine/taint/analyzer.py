@@ -191,11 +191,16 @@ class TaintAnalyzer:
 
             full_call = get_node_text(node, self.source_bytes)
 
-            if not is_taint_sink(func_name) and not is_taint_sink(full_call):
+            if not is_taint_sink(func_name):
                 continue
 
             # Get sink categories
-            sink_cats = get_sink_categories(func_name) or get_sink_categories(full_call)
+            sink_cats = get_sink_categories(func_name)
+
+            # Inline Sanitization Detection
+            if is_sanitizer(full_call):
+                if any(is_effective_sanitizer(full_call, sc) for sc in sink_cats):
+                    continue
 
             # Check if any arguments contain tainted variables
             args = get_function_arguments(node, self.source_bytes)
@@ -206,6 +211,16 @@ class TaintAnalyzer:
                 for var in arg_vars:
                     if var in self.tainted_vars:
                         tainted = self.tainted_vars[var]
+
+                        # Logical Validation Awareness
+                        import re
+                        var_escaped = re.escape(var.strip("$"))
+                        # Check if it's inside isset()
+                        if re.search(rf'isset\s*\([^)]*\${var_escaped}\b', full_call):
+                            continue
+                        # Check if it's used as an array key
+                        if re.search(rf'\[[^\]]*\${var_escaped}\b', full_call):
+                            continue
 
                         # Check if sanitization is effective for this sink
                         if tainted.sanitized_by:
@@ -245,11 +260,24 @@ class TaintAnalyzer:
 
         for node in echo_nodes:
             node_text = get_node_text(node, self.source_bytes)
+            
+            # Inline Sanitization Detection for echo/print
+            if is_sanitizer(node_text) and is_effective_sanitizer(node_text, "xss"):
+                continue
+                
             vars_in_echo = find_variables_in_node(node, self.source_bytes)
 
             for var in vars_in_echo:
                 if var in self.tainted_vars:
                     tainted = self.tainted_vars[var]
+
+                    # Logical Validation Awareness
+                    import re
+                    var_escaped = re.escape(var.strip("$"))
+                    if re.search(rf'isset\s*\([^)]*\${var_escaped}\b', node_text):
+                        continue
+                    if re.search(rf'\[[^\]]*\${var_escaped}\b', node_text):
+                        continue
 
                     if tainted.sanitized_by:
                         if is_effective_sanitizer(tainted.sanitized_by, "xss"):

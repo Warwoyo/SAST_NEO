@@ -8,11 +8,10 @@ TAINT_SINKS: dict[str, frozenset[str]] = {
     ]),
     "xss": frozenset([
         "echo", "print", "printf",
-        "display", "fetch",
     ]),
     "rce": frozenset([
         "exec", "shell_exec", "system", "passthru",
-        "popen", "proc_open", "eval", "assert",
+        "popen", "proc_open", "eval",
         "create_function",
     ]),
     "file_ops": frozenset([
