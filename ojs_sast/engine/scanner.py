@@ -33,6 +33,8 @@ class ScanOrchestrator:
         apache_config: str | None = None,
         min_severity: str = "INFO",
         upload_dirs: list[str] | None = None,
+        rules_files: list[str] | None = None,
+        enable_taint: bool = False,
     ) -> None:
         self.target_path = os.path.abspath(target_path)
         self.categories = categories or ["source_code", "config", "uploaded_file"]
@@ -40,83 +42,13 @@ class ScanOrchestrator:
         self.apache_config = apache_config
         self.min_severity = min_severity
         self.upload_dirs = upload_dirs or []
+        self.rules_files = rules_files or []
+        self.enable_taint = enable_taint
         self.findings: list[Finding] = []
         self.files_scanned = 0
         self.ojs_info: OJSInstallation = detect_ojs(self.target_path)
 
-    def run(
-        self,
-        source_code_callback=None,
-        upload_callback=None
-    ) -> ScanReport:
-        """Execute the full scan pipeline.
 
-        Args:
-            source_code_callback: Callback for source code scanning progress.
-            upload_callback: Callback for upload scanning progress.
-
-        Returns:
-            ScanReport with all findings and metadata.
-        """
-        start_time = time.time()
-        scan_id = str(uuid.uuid4())[:8]
-        timestamp = datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
-        # Step 2: Load rules
-        rule_loader = RuleLoader()
-        rules_loaded = rule_loader.load_all_builtin_rules()
-
-        # Step 3: Run category scanners
-        if "source_code" in self.categories:
-            logger.info("[source_code] Scanning PHP files...")
-            sc_scanner = SourceCodeScanner(rule_loader.rules, self.target_path)
-            sc_findings = sc_scanner.scan(progress_callback=source_code_callback)
-            self.findings.extend(sc_findings)
-            self.files_scanned += sc_scanner.files_scanned
-
-        if "config" in self.categories:
-            logger.info("[config] Scanning configurations...")
-            cfg_scanner = ConfigScanner(
-                rule_loader.rules,
-                self.target_path,
-                nginx_config=self.nginx_config,
-                apache_config=self.apache_config,
-                ojs_config_path=self.ojs_info.config_path if self.ojs_info else None,
-            )
-            cfg_findings = cfg_scanner.scan()
-            self.findings.extend(cfg_findings)
-
-        if "uploaded_file" in self.categories:
-            logger.info("[uploaded] Scanning upload directories...")
-            upload_dirs = self._resolve_upload_dirs()
-            if upload_dirs:
-                uf_scanner = UploadedFileScanner(rule_loader.rules, upload_dirs)
-                uf_findings = uf_scanner.scan(progress_callback=upload_callback)
-                self.findings.extend(uf_findings)
-                self.files_scanned += uf_scanner.files_scanned
-
-        # Step 4: Filter by minimum severity
-        if self.min_severity != "INFO":
-            self.findings = self._filter_by_severity(self.findings, self.min_severity)
-
-        # Step 5: Build report
-        duration = time.time() - start_time
-        summary = ScanReport.compute_summary(self.findings)
-
-        report = ScanReport(
-            scan_id=scan_id,
-            timestamp=timestamp,
-            ojs_version=self.ojs_info.version if self.ojs_info else None,
-            ojs_path=self.target_path,
-            scan_duration_seconds=round(duration, 2),
-            findings=self.findings,
-            summary=summary,
-            scanner_version=__version__,
-            categories_scanned=self.categories,
-            files_scanned=self.files_scanned,
-            rules_loaded=rules_loaded,
-        )
-
-        return report
 
     def generate_reports(self, report: ScanReport) -> str:
         """Generate all report formats and return the output directory.
@@ -215,11 +147,35 @@ class ScanOrchestrator:
 
         # Step 2: Load rules
         rule_loader = RuleLoader()
-        rules_loaded = rule_loader.load_all_builtin_rules()
+        rules_loaded = 0
+        is_cve_ojs = False
+        
+        if self.rules_files:
+            for rfile in self.rules_files:
+                if "cve_ojs" in rfile.lower():
+                    is_cve_ojs = True
+                
+                # Try to load rule if it exists as an absolute or relative path
+                if os.path.exists(rfile):
+                    rules_loaded += rule_loader.load_file(rfile)
+                else:
+                    # Look for it in the built-in rules directory
+                    base_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "categories")
+                    found = False
+                    for root, _, files in os.walk(base_dir):
+                        for f in files:
+                            if f == rfile or f == rfile + ".yaml" or f == rfile + ".yml":
+                                rules_loaded += rule_loader.load_file(os.path.join(root, f))
+                                found = True
+                    if not found:
+                        logger.warning(f"Could not find rules file: {rfile}")
+        else:
+            rules_loaded = rule_loader.load_all_builtin_rules()
 
         # Step 3: Run category scanners
         if "source_code" in self.categories:
-            sc_scanner = SourceCodeScanner(rule_loader.rules, self.target_path)
+            disable_taint = is_cve_ojs and not self.enable_taint
+            sc_scanner = SourceCodeScanner(rule_loader.rules, self.target_path, disable_taint=disable_taint)
             sc_findings = sc_scanner.scan(progress_callback=source_code_callback)
             self.findings.extend(sc_findings)
             self.files_scanned += sc_scanner.files_scanned

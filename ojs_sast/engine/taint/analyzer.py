@@ -216,6 +216,20 @@ class TaintAnalyzer:
                             if effective:
                                 continue
 
+                        # OJS DAO Bindings Check: if func is retrieve/update,
+                        # ensure the tainted var is in the SQL string (first arg).
+                        # If it's only in the bindings (subsequent args), it's safe.
+                        if func_name in ("retrieve", "update") and "sql_injection" in sink_cats:
+                            first_arg_node = None
+                            for child in args_node.children:
+                                if child.type == "argument":
+                                    first_arg_node = child
+                                    break
+                            if first_arg_node:
+                                vars_in_first = find_variables_in_node(first_arg_node, self.source_bytes)
+                                if var not in vars_in_first:
+                                    continue # Safe context, bound parameter
+
                         line = get_line_number(node)
                         self._create_finding(
                             tainted, func_name, full_call, line, sink_cats

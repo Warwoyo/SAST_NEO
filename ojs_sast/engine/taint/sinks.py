@@ -7,7 +7,7 @@ TAINT_SINKS: dict[str, frozenset[str]] = {
         "mysqli_query", "pg_query", "execute",
     ]),
     "xss": frozenset([
-        "echo", "print", "printf", "assign",
+        "echo", "print", "printf",
         "display", "fetch",
     ]),
     "rce": frozenset([

@@ -110,6 +110,16 @@ def check_system_dependencies() -> None:
     is_flag=True,
     help="Enable verbose output.",
 )
+@click.option(
+    "--rules", "-r",
+    multiple=True,
+    help="Specific rules files to use (e.g., cve_ojs.yaml).",
+)
+@click.option(
+    "--enable-taint",
+    is_flag=True,
+    help="Explicitly enable taint analysis even when using specific rules.",
+)
 def scan(
     target_path: str,
     category: tuple[str, ...],
@@ -119,6 +129,8 @@ def scan(
     list_findings: bool,
     upload_dir: tuple[str, ...],
     verbose: bool,
+    rules: tuple[str, ...],
+    enable_taint: bool,
 ) -> None:
     """Run a security scan on an OJS installation.
 
@@ -143,6 +155,7 @@ def scan(
 
     categories = list(category) if category else None
     upload_dirs = list(upload_dir) if upload_dir else None
+    rules_files = list(rules) if rules else None
 
     # Print banner
     click.echo()
@@ -158,6 +171,8 @@ def scan(
         apache_config=apache_config,
         min_severity=min_severity,
         upload_dirs=upload_dirs,
+        rules_files=rules_files,
+        enable_taint=enable_taint,
     )
 
     # Print OJS info and any warnings cleanly before starting progress bars

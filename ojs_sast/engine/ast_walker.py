@@ -134,10 +134,37 @@ def find_variables_in_node(node: Any, source_bytes: bytes) -> list[str]:
     variables = []
     for n in walk_tree(node):
         if n.type == "variable_name":
+            is_safe = False
+            p = getattr(n, "parent", None)
+            # Walk up to check if it's in a safe context
+            while p and p != getattr(node, "parent", None):
+                if p.type in ("isset_expression", "empty_intrinsic"):
+                    is_safe = True
+                    break
+                
+                if p.type == "subscript_expression":
+                    array_part = p.children[0] if p.children else None
+                    in_array_part = False
+                    curr = n
+                    while curr and curr != p:
+                        if curr == array_part:
+                            in_array_part = True
+                            break
+                        curr = getattr(curr, "parent", None)
+                    if not in_array_part:
+                        is_safe = True
+                        break
+                        
+                p = getattr(p, "parent", None)
+                
+            if is_safe:
+                continue
+
             var_text = get_node_text(n, source_bytes)
             if not var_text.startswith("$"):
                 var_text = "$" + var_text
-            variables.append(var_text)
+            if var_text not in variables:
+                variables.append(var_text)
     return variables
 
 

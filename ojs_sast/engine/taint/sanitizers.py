@@ -22,6 +22,8 @@ SANITIZERS: dict[str, frozenset[str]] = {
         "filter_var", "filter_input", "preg_replace",
         "ctype_alpha", "ctype_digit", "ctype_alnum",
         "is_int", "is_string", "is_array",
+        "(int)", "(integer)", "(bool)", "(boolean)", "(float)", "(double)", "(real)",
+        "PKPString::strtoupper", "urldecode", "iconv"
     ]),
 }
 

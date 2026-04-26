@@ -1,261 +1,247 @@
 rules:
-  # CVE-2023-33970: XSS via galley label in OJS < 3.3.0-16
+  # ============================================================
+  # OJS SAST VULNERABILITY RULES (GENERATED FROM CVE LIST)
+  # ============================================================
+
   - id: "OJS-SC-CVE-001"
-    name: "CVE-2023-33970 - XSS via galley label"
+    name: "CVE-2025-67890 - Path Traversal in NativeXmlIssueGalleyFilter"
     description: >
-      OJS versions before 3.3.0-16 are vulnerable to stored XSS through the
-      galley label field. An authenticated user can inject JavaScript via a
-      crafted galley label.
+      Kerentanan Path Traversal pada Native XML Plugin (Import/Export).  Tag XML
+      'file_name' langsung ditetapkan sebagai nama file server tanpa sanitasi
+      yang memadai,  menyebabkan penimpaan file sembarang (arbitrary file
+      overwrite) yang dapat mengarah pada eksekusi kode jarak jauh (RCE).
     severity: "HIGH"
     category: "source_code"
     subcategory: "ojs_specific"
-    cwe: "CWE-79"
-    owasp: "A03:2021"
+    cwe: "CWE-22"
+    owasp: "A01:2021"
+    ojs_versions_affected: "<= 3.3.0-21, <= 3.4.0-9, and <= 3.5.0-1"
     cve_references:
-      - "CVE-2023-33970"
-    ojs_versions_affected: "< 3.3.0-16"
-    include_paths:
-      - "**/*.php"
-      - "**/*.tpl"
-    exclude_paths:
-      - "**/classes/**"
-      - "**/*DAO.inc.php"
+      - "CVE-2025-67890"
+    taint_analysis:
+      sources:
+        - "$o->textContent"
+      sinks:
+        - "setServerFileName"
+      sanitizers:
+        - "preg_replace"
+        - "basename"
     pattern_match:
       type: "regex"
       patterns:
-        - "(?:echo|print|printf)\\s+.*?(?:\\$galley.*?->getLabel\\s*\\(\\s*\\))\
-          (?!.*?(htmlspecialchars|strip_tags))"
-        - "\\{\\$[a-zA-Z0-9_]+(?:->|\\.)(?:getLabel\\s*\\(\\s*\\)|label|galleyL\
-          abel)(?![^\\}]*(?:escape|strip_tags))[^\\}]*\\}"
+        - "setServerFileName\\s*\\(\\s*\\$o->textContent\\s*\\)"
     remediation: >
-      Update to OJS 3.3.0-16 or later. Apply htmlspecialchars() to galley label
-      output in PHP handlers or use the |escape modifier in Smarty templates
-      (e.g., {$galley->getLabel()|escape}).
+      Gunakan preg_replace dan str_replace untuk membatasi karakter hanya pada
+      a-z, 0-9, '.', dan '-' sebelum mengoper input ke fungsi setServerFileName.
+    false_positive_notes: >
+      Input telah disaring dengan aman menggunakan regex pengganti yang ketat
+      (seperti /[^a-z0-9\.\-]+/) sebelum properti diisi.
     references:
-      - "https://github.com/pkp/pkp-lib/issues/8866"
+      - "https://github.com/pkp/pkp-lib/issues/11973"
+      - "http://karmainsecurity.com/KIS-2025-11"
 
-  # CVE-2022-24822: RCE via crafted file upload in OJS < 3.3.0-10
   - id: "OJS-SC-CVE-002"
-    name: "CVE-2022-24822 - RCE via file upload"
+    name: "CVE-2025-67893 - LESS Code Injection in baseColour"
     description: >
-      OJS versions before 3.3.0-10 allow remote code execution through specially
-      crafted file uploads that bypass extension validation in the submission
-      process.
-    severity: "CRITICAL"
+      Theme Settings API rentan terhadap Injeksi Kode LESS. Parameter
+      'baseColour' digabungkan tanpa sanitasi  ke dalam variabel LESS yang dapat
+      menyebabkan SSRF atau Local File Read saat diparsing.
+    severity: "HIGH"
     category: "source_code"
     subcategory: "ojs_specific"
-    cwe: "CWE-434"
-    owasp: "A04:2021"
+    cwe: "CWE-94"
+    owasp: "A03:2021"
+    ojs_versions_affected: "<= 3.3.0-21, <= 3.4.0-9, and <= 3.5.0-1"
     cve_references:
-      - "CVE-2022-24822"
-    ojs_versions_affected: "< 3.3.0-10"
+      - "CVE-2025-67893"
+    taint_analysis:
+      sources:
+        - "$this->getOption('baseColour')"
+      sinks:
+        - "$additionalLessVariables"
+        - "Less_Parser::parse"
+      sanitizers:
+        - "preg_match"
     pattern_match:
       type: "regex"
       patterns:
-        - "FileManager.*?uploadFile(?!.*?validateExtension)"
-        - "move_uploaded_file.*?(?!.*?extension|whitelist)"
+        - "\\$additionalLessVariables\\[\\]\\s*=\\s*['\"]@bg-base:['\"]\\s*\\.\
+          \\s*\\$this->getOption\\s*\\(\\s*['\"]baseColour['\"]\\s*\\)"
     remediation: >
-      Update to OJS 3.3.0-10 or later. Implement strict file extension
-      whitelisting and magic byte validation.
+      Validasi parameter menggunakan regex kode warna heksadesimal yang ketat:
+      preg_match('/^#[0-9a-fA-F]{1,6}$/', $value).
+    false_positive_notes: >
+      Input telah tervalidasi oleh regex heksadesimal yang ketat sebelum
+      penyisipan ke variabel parser LESS.
     references:
-      - "https://github.com/pkp/pkp-lib/security/advisories/GHSA-7x42-m3q4-qgjm"
+      - "https://github.com/pkp/pkp-lib/issues/11974"
 
-  # CVE-2021-27231: Path traversal in OJS < 3.2.1-5
   - id: "OJS-SC-CVE-003"
-    name: "CVE-2021-27231 - Path traversal"
+    name: "CVE-2025-67889 - SQL Injection in Institution Collector"
     description: >
-      OJS versions before 3.2.1-5 are vulnerable to path traversal allowing
-      unauthenticated access to arbitrary files on the server.
+      Adanya SQL Injection bertipe boolean/time-based pada endpoint Institutions
+      API akibat parameter 'searchPhrase' yang diinterpolasi langsung ke dalam
+      fungsi DB::raw tanpa proses bind parameters yang aman.
+    severity: "HIGH"
+    category: "source_code"
+    subcategory: "ojs_specific"
+    cwe: "CWE-89"
+    owasp: "A03:2021"
+    ojs_versions_affected: "<= 3.4.0-9, and <= 3.5.0-1"
+    cve_references:
+      - "CVE-2025-67889"
+    taint_analysis:
+      sources:
+        - "$this->searchPhrase"
+        - "$word"
+      sinks:
+        - "DB::raw"
+      sanitizers:
+        - "$pdo->quote"
+    pattern_match:
+      type: "regex"
+      patterns:
+        - "DB::raw\\s*\\(\\s*[\"']lower\\('%\\{\\$word\\}%'\\)[\"']\\s*\\)"
+    remediation: >
+      Gunakan API bind parameter dari Laravel (?) atau bungkus input variabel
+      secara eksplisit menggunakan $pdo->quote() sebelum melakukan penyambungan
+      query.
+    false_positive_notes: >
+      Variabel berada di dalam DB::raw() namun variabel tersebut secara
+      eksplisit di-*cast* menjadi integer atau dibungkus PDO quote.
+    references:
+      - "https://github.com/pkp/pkp-lib/issues/11977"
+
+  - id: "OJS-SC-CVE-004"
+    name: "CVE-2025-67892 - Login CSRF in PKP-WAL"
+    description: >
+      Fungsi proses login tidak melakukan validasi middleware token anti-CSRF,
+      sehingga rentan  terhadap serangan Cross-Site Request Forgery (CSRF) pada
+      saat autentikasi akun.
+    severity: "MEDIUM"
+    category: "source_code"
+    subcategory: "ojs_specific"
+    cwe: "CWE-352"
+    owasp: "A01:2021"
+    ojs_versions_affected: "<= 3.3.0-21, <= 3.4.0-9, and <= 3.5.0-1"
+    cve_references:
+      - "CVE-2025-67892"
+    pattern_match:
+      type: "regex"
+      patterns:
+        - "(?s)public\\s+static\\s+function\\s+login\\s*\\(.*?\\)\\s*\\{(?:(?!c\
+          heckCSRF).)*?\\$user->getAuthId"
+        - "(?s)public\\s+static\\s+function\\s+login\\s*\\(.*?\\)\\s*\\{(?:(?!c\
+          heckCSRF).)*?verifyPassword"
+    remediation: >
+      Panggil $request->checkCSRF() di awal fungsi pemrosesan handler POST
+      login, dan tolak permintaan jika token tidak valid.
+    false_positive_notes: >
+      API yang bersifat *stateless* (misal: JWT, OAuth) yang memang imun
+      terhadap CSRF, atau sistem memiliki proteksi CSRF di tingkat
+      global/middleware framework.
+    references:
+      - "https://github.com/pkp/pkp-lib/issues/11978"
+
+  - id: "OJS-SC-CVE-005"
+    name: "CVE-2023-47271 - RCE via Path Traversal in NativeImportExportPlugin"
+    description: >
+      Pembuatan file tanpa sanitasi regex yang kuat dari tag <cover_image> (dari
+      format XML)  menyebabkan modifikasi path file sesuka hati, berujung pada
+      ekseskusi kode lokal/jarak jauh saat menulis file base64.
     severity: "CRITICAL"
     category: "source_code"
     subcategory: "ojs_specific"
     cwe: "CWE-22"
     owasp: "A01:2021"
-    cve_references:
-      - "CVE-2021-27231"
-    ojs_versions_affected: "< 3.2.1-5"
-    pattern_match:
-      type: "regex"
-      patterns:
-        - "(include|require|fopen|readfile).*?\\.\\.\\/"
-        - "getFilePath.*?(?!.*?basename|realpath|validate)"
-    remediation: >
-      Update to OJS 3.2.1-5 or later. Validate all file paths with basename()
-      and realpath().
-    references:
-      - "https://cve.mitre.org/cgi-bin/cvename.cgi?name=CVE-2021-27231"
-
-  # CVE-2020-28113: SSRF in OJS < 3.2.0-4
-  - id: "OJS-SC-CVE-004"
-    name: "CVE-2020-28113 - Server-Side Request Forgery"
-    description: >
-      OJS versions before 3.2.0-4 contain SSRF vulnerabilities that allow
-      authenticated users to make requests to internal services.
-    severity: "HIGH"
-    category: "source_code"
-    subcategory: "ojs_specific"
-    cwe: "CWE-918"
-    owasp: "A10:2021"
-    cve_references:
-      - "CVE-2020-28113"
-    ojs_versions_affected: "< 3.2.0-4"
-    pattern_match:
-      type: "regex"
-      patterns:
-        - "(curl_exec|file_get_contents|fopen)\\s*\\(.*?\\$\\w+.*?(url|uri|link\
-          |href)"
-        - "Http::request\\s*\\(.*?\\$"
-    remediation: >
-      Update to OJS 3.2.0-4 or later. Validate and whitelist allowed URLs. Block
-      internal/private IP ranges.
-    references:
-      - "https://cve.mitre.org/cgi-bin/cvename.cgi?name=CVE-2020-28113"
-
-  # ============================================================
-  # REMOTE CODE EXECUTION (RCE)
-  # ============================================================
-
-  - id: "OJS-SC-CVE-005"
-    name: "Arbitrary File Upload via Native XML Import (CVE-2023-47271)"
-    description: >
-      The Native XML Import/Export plugin fails to validate whether the file
-      embedded inside <cover_image> is a legitimate image. An attacker with
-      Journal Manager or Administrator privileges can embed a Base64-encoded PHP
-      backdoor as a cover image in the import XML, causing the server to write
-      an executable .php file to the public journals directory. This leads to
-      Remote Code Execution or full site Defacement.
-    severity: "CRITICAL"
-    category: "source_code"
-    subcategory: "ojs_specific"
-    cwe: "CWE-434"
-    owasp: "A03:2021"
-    ojs_versions_affected: "< 3.3.0-16"
+    ojs_versions_affected: "<= 3.4.0-3, <= 3.3.0-15"
     cve_references:
       - "CVE-2023-47271"
     taint_analysis:
       sources:
-        - "$_FILES"
-        - "file_get_contents"
-        - "base64_decode"
+        - "$n->textContent"
       sinks:
         - "file_put_contents"
-        - "move_uploaded_file"
-        - "fwrite"
       sanitizers:
-        - "getimagesize"
-        - "mime_content_type"
-        - "finfo_file"
+        - "preg_replace"
     pattern_match:
       type: "regex"
       patterns:
-        - "<cover_image>[^<]*\\.php[^<]*<\\/cover_image>"
-        - "cover_image.*\\.(php[3-7]?|phtml|phar|asp|aspx|jsp)\\b"
-        - "move_uploaded_file\\s*\\(.*\\$_(FILES|POST|GET)"
+        - "\\$coverImage\\[['\"]uploadName['\"]\\]\\s*=\\s*(?:uniqid\\(\\)\\s*\
+          \\.\\s*['\"]-['\"]\\s*\\.\\s*basename\\s*\\()?.*\\$n->textContent"
+        - "file_put_contents\\s*\\(\\s*\\$filePath\\s*,\\s*base64_decode\\s*\\(\
+          .*\\$n->textContent\\s*\\)"
     remediation: >
-      Implement strict allowlist validation (jpg, jpeg, png, gif, webp) on all
-      file extensions processed from XML imports. Re-validate using server-side
-      MIME type inspection (finfo_file or getimagesize) regardless of the
-      declared filename. Store uploaded files outside the web root or in a
-      directory with PHP execution disabled via .htaccess/server config.
+      Terapkan regex ketat untuk membersihkan format file seperti
+      preg_replace("/[^a-z0-9\.\-]+/", "", ...) ditambah penggantian spasi.
+    false_positive_notes: >
+      Penamaan file melewati pencocokan whitelist reguler yang ketat dan
+      memeriksa ekstensi.
+    references:
+      - "https://github.com/pkp/pkp-lib/issues/9464"
 
   - id: "OJS-SC-CVE-006"
-    name: "Incomplete Blacklist File Upload Bypass (CVE-2012-1468)"
+    name: "CVE-2023-5903 - Stored XSS in Section Title"
     description: >
-      OJS versions before 2.3.7 used a blacklist to reject dangerous file
-      extensions during upload. The blacklist was case-sensitive and incomplete,
-      allowing attackers with Author privileges to bypass it using alternate
-      casings (.pHp, .PHP, .Php) or alternate extensions (.asp, .phtml, .phar),
-      resulting in Remote Code Execution.
+      Pemanggilan variabel judul subseksi ($section->getLocalizedTitle()) yang
+      disimpan pengguna dengan tingkat  hak akses tinggi dimasukkan langsung ke
+      tag translasi (Smarty {translate}) tanpa modifier escaping HTML.
+    severity: "MEDIUM"
+    category: "source_code"
+    subcategory: "ojs_specific"
+    cwe: "CWE-79"
+    owasp: "A03:2021"
+    ojs_versions_affected: "< 3.3.0-16"
+    cve_references:
+      - "CVE-2023-5903"
+    pattern_match:
+      type: "regex"
+      patterns:
+        - "name=\\$section->getLocalizedTitle\\(\\)(?!\\|escape|\\|strip_unsafe\
+          _html)"
+    remediation: >
+      Tambahkan pemodifikasi `|escape` di dalam tag fungsi {translate}:
+      name=$section->getLocalizedTitle()|escape.
+    false_positive_notes: >
+      Variabel lolos proses escape dari layer controller PHP sebelum ditransfer
+      ke template.
+    references:
+      - "https://nvd.nist.gov/vuln/detail/CVE-2023-5903"
+
+  - id: "OJS-SC-CVE-007"
+    name: "CVE-2023-5626 - CSRF in Payment Types Form"
+    description: >
+      Konstruktor form pada berkas PaymentTypesForm.inc.php tidak
+      mengimplementasikan FormValidatorCSRF,  memungkinkan pengubahan jenis dan
+      sistem pembayaran lewat teknik *forged requests*.
     severity: "HIGH"
     category: "source_code"
     subcategory: "ojs_specific"
-    cwe: "CWE-184"
-    owasp: "A03:2021"
-    ojs_versions_affected: "< 2.3.7"
+    cwe: "CWE-352"
+    owasp: "A01:2021"
+    ojs_versions_affected: "< 3.3.0-16"
     cve_references:
-      - "CVE-2012-1468"
-    taint_analysis:
-      sources:
-        - "$_FILES['name']"
-        - "$_FILES['tmp_name']"
-      sinks:
-        - "move_uploaded_file"
-        - "copy"
-        - "rename"
-      sanitizers:
-        - "strtolower"
-        - "pathinfo"
-        - "in_array"
+      - "CVE-2023-5626"
     pattern_match:
       type: "regex"
       patterns:
-        - "in_array\\s*\\(\\s*\\$.*(?:ext|extension)\\s*,\\s*\\$.*(?:blacklist|\
-          bad|reject)"
-        - "array\\s*\\(\\s*.*['\"]\\.?(?:php[3-7]?|phtml|phar|asp|aspx|shtml|cg\
-          i|pl)['\"].*\\)"
-        - "==\\s*['\"]\\.?(?:php[3-7]?|phtml|phar|asp|aspx|shtml|cgi|pl)['\"]"
+        - "(?s)public\\s+function\\s+__construct\\s*\\(\\s*\\)\\s*\\{(?:(?!Form\
+          ValidatorCSRF).)*?manager\\.payment\\.form\\.numeric"
     remediation: >
-      Replace the extension blacklist with a strict allowlist. Always normalise
-      the filename to lowercase before comparison. Reject files whose extension
-      does not appear in the approved list. Additionally verify the file's MIME
-      type server-side using finfo_file() and confirm it matches the expected
-      image or document type.
-
-  - id: "OJS-SC-CVE-007"
-    name: "Plugin Repackaging Backdoor Upload (RCE via Plugin Upload)"
-    description: >
-      The Plugin Upload feature accepts .tar.gz archives without scanning their
-      contents for embedded backdoor scripts. An attacker with Administrator
-      access can repackage a legitimate plugin (e.g., SiteSearch) to include a
-      malicious PHP webshell (shell.php) inside the plugin directory. Once
-      installed, the webshell is accessible from the public plugins path and
-      allows arbitrary OS command execution.
-    severity: "CRITICAL"
-    category: "source_code"
-    subcategory: "ojs_specific"
-    cwe: "CWE-434"
-    owasp: "A03:2021"
-    taint_analysis:
-      sources:
-        - "$_FILES"
-        - "$_GET['cmd']"
-        - "$_POST['cmd']"
-      sinks:
-        - "system"
-        - "exec"
-        - "shell_exec"
-        - "passthru"
-        - "popen"
-        - "proc_open"
-      sanitizers: []
-    pattern_match:
-      type: "regex"
-      patterns:
-        - "system\\s*\\(\\s*\\$_GET\\["
-        - "exec\\s*\\(\\s*\\$_GET\\["
-        - "shell_exec\\s*\\(\\s*\\$_REQUEST\\["
-        - "passthru\\s*\\(\\s*\\$_(GET|POST|REQUEST)\\["
-        - "<\\?php\\s+(system|exec|shell_exec|passthru)\\s*\\(\\s*\\$_(GET|POST\
-          |REQUEST)"
-    remediation: >
-      Scan all files within uploaded plugin archives before extraction. Reject
-      archives containing .php, .phtml, .phar files that are not part of the
-      verified plugin manifest. Implement plugin signature verification. Disable
-      PHP execution in the plugins/generic directory via server configuration.
-
-  # ============================================================
-  # PHP OBJECT INJECTION / INSECURE DESERIALIZATION
-  # ============================================================
+      Tambahkan pemeriksa token pada saat form inisialisasi: $this->addCheck(new
+      FormValidatorCSRF($this));.
+    false_positive_notes: >
+      Bila Form dirancang semata-mata khusus instruksi pencarian HTTP GET
+      (bersifat read-only).
+    references:
+      - "https://huntr.dev/bounties/c99279c1-709a-4e7b-a042-010c2bb44d6b"
 
   - id: "OJS-SC-CVE-008"
-    name: "PHP Object Injection via Unserialize in Report Generator (CVE-2019-19909)"
+    name: "CVE-2019-19909 - Deserialization of Untrusted Data in Report Generator"
     description: >
-      The PKP Report Generator Handler passes user-supplied input from the
-      'filters' URL parameter directly to PHP's unserialize() function without
-      validation. An authenticated Journal Manager can craft a URL containing a
-      serialized PHP object to trigger a Fatal Error (DoS) or, given an
-      appropriate gadget chain in the application's class hierarchy, achieve
-      Remote Code Execution.
+      Input kontrol pada variabel 'filters' dan 'orderBy' diambil dari parameter
+      URL  dan diproses langsung menggunakan PHP unserialize(), membuka jalan
+      untuk Remote Code Execution (RCE) via injeksi objek PHP.
     severity: "HIGH"
     category: "source_code"
     subcategory: "ojs_specific"
@@ -266,193 +252,96 @@ rules:
       - "CVE-2019-19909"
     taint_analysis:
       sources:
-        - "$_GET['filters']"
-        - "$_POST['filters']"
-        - "$_REQUEST"
+        - "$request->getUserVar('filters')"
+        - "$request->getUserVar('orderBy')"
       sinks:
         - "unserialize"
       sanitizers:
         - "json_decode"
-        - "base64_decode"
     pattern_match:
       type: "regex"
       patterns:
-        - "unserialize\\s*\\(\\s*\\$_(GET|POST|REQUEST|COOKIE)"
-        - "unserialize\\s*\\(\\s*\\$\\w+\\s*\\[.*(filter|param|data|input)"
-        - "\\$filters\\s*=\\s*unserialize\\s*\\("
+        - "unserialize\\s*\\(\\s*\\$request->getUserVar\\s*\\("
+        - "unserialize\\s*\\(\\s*\\$orderBy\\s*\\)"
     remediation: >
-      Never pass user-controlled data to unserialize(). Replace with
-      json_decode() for structured data exchange. If deserialization is
-      unavoidable, use unserialize($data, ['allowed_classes' => false]) to
-      prevent object instantiation, or implement HMAC-based integrity checking
-      on the serialized payload before deserializing it.
-
-  # ============================================================
-  # CROSS-SITE SCRIPTING (XSS)
-  # ============================================================
+      Ganti fungsionalitas serialize/unserialize menjadi fungsi pertukaran
+      format yang aman yakni json_encode dan json_decode.
+    false_positive_notes: >
+      Fungsi unserialize() dikenakan hanya pada output hasil query dari database
+      yang dipastikan ketat tidak mungkin dimanipulasi dari parameter end-user.
+    references:
+      - "https://nvd.nist.gov/vuln/detail/CVE-2019-19909"
 
   - id: "OJS-SC-CVE-009"
-    name: "Stored XSS in Journal Section Title (CVE-2023-5903 / CVE-2024-24511)"
+    name: "CVE-2025-13469 - Stored XSS in Manual Payment Instructions"
     description: >
-      Input fields for Journal Section Title and Journal Title (Settings >
-      Journal > Sections / Masthead) do not sanitize HTML/JavaScript before
-      persisting the value to the database. When the stored value is later
-      rendered on public journal pages or archive pages without escaping,
-      injected scripts execute in every visitor's browser. This enables session
-      hijacking, credential theft, and malware distribution.
-    severity: "HIGH"
+      Variabel manualInstructions di sisi front-end sistem pembayaran manual
+      hanya menetralkan format  baris menggunakan `|nl2br` tanpa mensterilkan
+      skrip HTML, menyebabkan Stored XSS.
+    severity: "LOW"
     category: "source_code"
     subcategory: "ojs_specific"
     cwe: "CWE-79"
     owasp: "A03:2021"
-    ojs_versions_affected: "< 3.3.0-16 (CVE-2023-5903), OJS 3.4 (CVE-2024-24511)"
+    ojs_versions_affected: "3.3.0, 3.4.0, 3.5.0"
     cve_references:
-      - "CVE-2023-5903"
-      - "CVE-2024-24511"
-    taint_analysis:
-      sources:
-        - "$_POST['title']"
-        - "$_POST['sectionTitle']"
-        - "$_POST['localizedData']"
-      sinks:
-        - "echo"
-        - "print"
-        - "printf"
-        - "Smarty::display"
-      sanitizers:
-        - "htmlspecialchars"
-        - "htmlentities"
-        - "strip_tags"
-        - "PKPString::stripUnsafeHtml"
+      - "CVE-2025-13469"
     pattern_match:
       type: "regex"
       patterns:
-        - "<svg[^>]*/?\\s*onload\\s*="
-        - "on(load|error|mouseover|click|focus)\\s*=\\s*[\"\\x27]?[^\"]*script"
-        - "<script[^>]*>.*?<\\/script>"
-        - "javascript\\s*:\\s*(alert|document|window|eval)"
+        - "\\{\\$manualInstructions\\|nl2br\\}(?!.*strip_unsafe_html|.*escape)"
     remediation: >
-      Apply context-aware output encoding on all user-supplied strings rendered
-      in HTML context (use htmlspecialchars() with ENT_QUOTES). Implement a
-      strict Content Security Policy (CSP) header. Use OJS's
-      PKPString::stripUnsafeHtml() or an HTML Purifier library to sanitize
-      rich-text inputs on save, not only on render.
+      Tambahkan string modifier strip_unsafe_html sebelum variabel diputus
+      barisnya di file paymentForm.tpl:
+      {$manualInstructions|strip_unsafe_html|nl2br}.
+    false_positive_notes: >
+      Nilai input manualInstructions ini telah terjamin di-sanitize aman oleh
+      layer Controller di server.
+    references:
+      - "https://github.com/pkp/pkp-lib/issues/12022"
 
   - id: "OJS-SC-CVE-010"
-    name: "Stored XSS in Input SubTitle Component (CVE-2024-24512)"
+    name: "CVE-2023-5894 - Stored XSS in Issue Title (Edit Modal)"
     description: >
-      The subtitle input field in OJS 3.4 suffers from the same lack of HTML
-      sanitization as the title field (CVE-2024-24511). Attackers with Journal
-      Manager or Editor access can inject persistent JavaScript payloads via the
-      subtitle field that execute in all visitors' browsers on affected pages.
-    severity: "HIGH"
+      Judul issue (getIssueIdentification) ditranslasikan dalam fungsi helper
+      OJS secara langsung  tanpa disanitasi yang dapat memicu eksekusi payload
+      Javascript pada 'Edit Modal' panel pengelola jurnal.
+    severity: "MEDIUM"
     category: "source_code"
     subcategory: "ojs_specific"
     cwe: "CWE-79"
     owasp: "A03:2021"
-    ojs_versions_affected: "OJS 3.4 (unpatched)"
+    ojs_versions_affected: "< 3.3.0-16 and 3.4.0-x < 3.4.0-4"
     cve_references:
-      - "CVE-2024-24512"
+      - "CVE-2023-5894"
     taint_analysis:
       sources:
-        - "$_POST['subtitle']"
-        - "$_POST['subTitle']"
+        - "$issue->getIssueIdentification()"
       sinks:
-        - "echo"
-        - "print"
-        - "Smarty::display"
+        - "__()"
       sanitizers:
         - "htmlspecialchars"
-        - "PKPString::stripUnsafeHtml"
     pattern_match:
       type: "regex"
       patterns:
-        - "subtitle.*<script"
-        - "\\$_POST\\[.subtitle.\\](?!.*htmlspecialchars)"
+        - "__\\s*\\(\\s*['\"]editor\\.issues\\.editIssue['\"]\\s*,\\s*(?:array\
+          \\(|\\[)\\s*['\"]issueIdentification['\"]\\s*=>\\s*\\$issue->getIssue\
+          Identification\\(\\)\\s*(?:\\)|\\])\\s*\\)"
     remediation: >
-      Apply the same sanitization controls described in OJS-SC-XSS-001 to all
-      subtitle input fields. Centralise input sanitization in the form
-      validation layer so that new fields automatically inherit the protection.
+      Kunci string terjemahan secara eksplisit di dalam fungsi
+      htmlspecialchars() sebelum diletakkan pada array substitusi terjemahan.
+    false_positive_notes: >
+      Data input dipastikan hanyalah angka ID (integer) atau hardcoded string
+      yang aman.
+    references:
+      - "https://huntr.com/bounties/aba3ba5b-aa6b-4076-b663-4237b4a0761d"
 
   - id: "OJS-SC-CVE-011"
-    name: "Stored XSS in Contributor Public Name (CVE-2024-25434)"
+    name: "CVE-2018-12229 - Reflected XSS in Search Page"
     description: >
-      The Public Name parameter in the Contributor submission form in OJS 3.3 is
-      not sanitized against HTML injection. A user with submission access can
-      inject malicious JavaScript that is stored and later executed when editors
-      or public visitors view the submission details.
-    severity: "HIGH"
-    category: "source_code"
-    subcategory: "ojs_specific"
-    cwe: "CWE-79"
-    owasp: "A03:2021"
-    ojs_versions_affected: "OJS 3.3 (unpatched)"
-    cve_references:
-      - "CVE-2024-25434"
-    taint_analysis:
-      sources:
-        - "$_POST['publicName']"
-        - "$_POST['authorPublicName']"
-      sinks:
-        - "echo"
-        - "print"
-      sanitizers:
-        - "htmlspecialchars"
-        - "strip_tags"
-    pattern_match:
-      type: "regex"
-      patterns:
-        - "publicName.*<[^>]+on\\w+\\s*="
-        - "\\$_POST\\[.publicName.\\](?!.*htmlspecialchars)"
-    remediation: >
-      Strip or encode HTML entities from publicName before persistence and
-      before rendering. Apply output encoding in the contributor display
-      templates.
-
-  - id: "OJS-SC-CVE-012"
-    name: "Stored XSS in Add Discussion Subject – Production & Submissions
-      (CVE-2024-25436 / CVE-2024-25438)"
-    description: >
-      The Subject field of the Add Discussion module in both the Production and
-      Submissions workflows does not sanitize input. An authenticated user can
-      inject persistent JavaScript that executes for all participants viewing
-      the discussion thread, including editors and reviewers.
-    severity: "HIGH"
-    category: "source_code"
-    subcategory: "ojs_specific"
-    cwe: "CWE-79"
-    owasp: "A03:2021"
-    ojs_versions_affected: "OJS 3.3 (unpatched)"
-    cve_references:
-      - "CVE-2024-25436"
-      - "CVE-2024-25438"
-    taint_analysis:
-      sources:
-        - "$_POST['subject']"
-        - "$_POST['discussionSubject']"
-      sinks:
-        - "echo"
-        - "print"
-        - "Smarty::display"
-      sanitizers:
-        - "htmlspecialchars"
-    pattern_match:
-      type: "regex"
-      patterns:
-        - "\\$_POST\\[.subject.\\](?!.*htmlspecialchars)"
-        - "subject.*<script"
-    remediation: >
-      Apply htmlspecialchars(ENT_QUOTES) to the subject field before storage and
-      before rendering in discussion views. Audit all discussion-related
-      templates to ensure subject values are consistently escaped.
-
-  - id: "OJS-SC-CVE-013"
-    name: "Stored XSS in Search Parameter – By Author Field (CVE-2018-12229)"
-    description: >
-      In OJS 3.0.0 through 3.1.1-1, the 'By Author' search parameter in
-      search.tpl is not sanitized before being reflected in the search results
-      page. An attacker can craft a malicious URL that, when visited by an
-      authenticated user, executes arbitrary JavaScript.
+      Form pencarian mengekspos Reflected XSS lewat parameter 'authors' dari URL
+      GET  yang diselipkan ke properti value dalam atribut tag HTML `<input>` di
+      smarty tanpa tag pelepasan karakter.
     severity: "MEDIUM"
     category: "source_code"
     subcategory: "ojs_specific"
@@ -461,349 +350,16 @@ rules:
     ojs_versions_affected: "3.0.0 - 3.1.1-1"
     cve_references:
       - "CVE-2018-12229"
-    taint_analysis:
-      sources:
-        - "$_GET['author']"
-        - "$_GET['query']"
-        - "$_REQUEST['searchField']"
-      sinks:
-        - "echo"
-        - "print"
-      sanitizers:
-        - "htmlspecialchars"
     pattern_match:
       type: "regex"
       patterns:
-        - "\\$_GET\\[.author.\\](?!.*htmlspecialchars)"
-        - "echo\\s+\\$_GET\\[.author.\\]"
-        - "\\{literal\\}.*\\$smarty\\.get\\.author"
+        - "value=\\s*['\"]\\{\\$authors\\}['\"](?!.*escape)"
     remediation: >
-      Encode the 'author' search parameter with htmlspecialchars() before
-      inserting it into the HTML template. Validate that it contains only
-      expected characters (letters, spaces, hyphens) before processing the
-      search.
-
-  - id: "OJS-SC-CVE-014"
-    name: "Reflected XSS via HTTP Headers (CVE-2022-26616)"
-    description: >
-      OJS versions 2.4.8 through 3.3.8 reflect user-controllable HTTP headers
-      (such as X-Forwarded-For, Referer, or User-Agent) into HTML responses
-      without proper output encoding, enabling reflected XSS attacks against
-      users whose requests are logged or processed by the application.
-    severity: "MEDIUM"
-    category: "source_code"
-    subcategory: "ojs_specific"
-    cwe: "CWE-79"
-    owasp: "A03:2021"
-    ojs_versions_affected: "2.4.8 - 3.3.8"
-    cve_references:
-      - "CVE-2022-26616"
-    taint_analysis:
-      sources:
-        - "$_SERVER['HTTP_X_FORWARDED_FOR']"
-        - "$_SERVER['HTTP_REFERER']"
-        - "$_SERVER['HTTP_USER_AGENT']"
-        - "getallheaders()"
-      sinks:
-        - "echo"
-        - "print"
-        - "Smarty::display"
-      sanitizers:
-        - "htmlspecialchars"
-        - "filter_var"
-    pattern_match:
-      type: "regex"
-      patterns:
-        - "echo\\s+\\$_SERVER\\[.HTTP_"
-        - "\\$_SERVER\\[.HTTP_(REFERER|USER_AGENT|X_FORWARDED_FOR).\\](?!.*html\
-          specialchars)"
-    remediation: >
-      Never echo raw HTTP header values into HTML. Apply htmlspecialchars() to
-      any header value used in template output. Validate IP addresses with
-      filter_var() using FILTER_VALIDATE_IP before display.
-
-  - id: "OJS-SC-CVE-015"
-    name: "Stored XSS – Payment Instructions manualInstructions (CVE-2025-13469)"
-    description: >
-      The Payment Instructions Setting for OMP and OJS allows HTML to be stored
-      via the 'manualInstructions' argument of paymentForm.tpl without adequate
-      sanitization. An attacker with administrative access can inject persistent
-      scripts that execute for all users viewing the payment instructions page.
-    severity: "HIGH"
-    category: "source_code"
-    subcategory: "ojs_specific"
-    cwe: "CWE-79"
-    owasp: "A03:2021"
-    cve_references:
-      - "CVE-2025-13469"
-    taint_analysis:
-      sources:
-        - "$_POST['manualInstructions']"
-        - "$_POST['paymentInstructions']"
-      sinks:
-        - "Smarty::display"
-        - "echo"
-      sanitizers:
-        - "PKPString::stripUnsafeHtml"
-        - "htmlspecialchars"
-    pattern_match:
-      type: "regex"
-      patterns:
-        - "manualInstructions(?!.*stripUnsafeHtml|.*htmlspecialchars)"
-        - "\\$_POST\\[.manualInstructions.\\]"
-    remediation: >
-      Sanitize the manualInstructions field using an HTML Purifier or
-      PKPString:: stripUnsafeHtml() before saving to the database. Additionally
-      apply output encoding when the value is rendered in the template.
-
-  - id: "OJS-SC-CVE-016"
-    name: "XSS with Privilege Escalation Risk (CVE-2024-50965)"
-    description: >
-      A Cross-Site Scripting vulnerability in OJS/OMP/OPS before version
-      3.3.0.16 can be leveraged not only to execute arbitrary scripts in the
-      victim's browser but also to perform authenticated actions on their
-      behalf, potentially escalating from a lower-privileged role to
-      administrator through session manipulation or CSRF token theft embedded in
-      the XSS payload.
-    severity: "CRITICAL"
-    category: "source_code"
-    subcategory: "ojs_specific"
-    cwe: "CWE-79"
-    owasp: "A03:2021"
-    ojs_versions_affected: "< 3.3.0.16"
-    cve_references:
-      - "CVE-2024-50965"
-    taint_analysis:
-      sources:
-        - "$_POST"
-        - "$_GET"
-        - "$_REQUEST"
-      sinks:
-        - "echo"
-        - "print"
-      sanitizers:
-        - "htmlspecialchars"
-        - "PKPString::stripUnsafeHtml"
-        - "sanitize"
-    pattern_match:
-      type: "regex"
-      patterns:
-        - "echo\\s+\\$[a-zA-Z_]+(?!.*htmlspecialchars)"
-        - "print\\s+\\$_(GET|POST|REQUEST)"
-    remediation: >
-      Apply consistent output encoding across all templates. Implement a strict
-      Content Security Policy to limit the impact of any XSS. Use the
-      'SameSite=Strict' cookie attribute to prevent CSRF chaining with XSS
-      payloads.
-
-  - id: "OJS-SC-CVE-017"
-    name: "XSS via iBrowser Plugin and Bio/Abstract Fields (CVE-2012-1469)"
-    description: >
-      Multiple XSS vectors exist in OJS before 2.3.7: the iBrowser rich-text
-      plugin, author name input fields, the Bio Statement field, and the
-      Abstract field all fail to sanitize HTML, enabling stored or reflected XSS
-      attacks.
-    severity: "MEDIUM"
-    category: "source_code"
-    subcategory: "ojs_specific"
-    cwe: "CWE-79"
-    owasp: "A03:2021"
-    ojs_versions_affected: "< 2.3.7"
-    cve_references:
-      - "CVE-2012-1469"
-    taint_analysis:
-      sources:
-        - "$_POST['bio']"
-        - "$_POST['abstract']"
-        - "$_POST['authorName']"
-      sinks:
-        - "echo"
-        - "Smarty::display"
-      sanitizers:
-        - "htmlspecialchars"
-        - "strip_tags"
-    pattern_match:
-      type: "regex"
-      patterns:
-        - "\\$_POST\\[.(bio|abstract|authorName).\\](?!.*htmlspecialchars)"
-        - "echo\\s+\\$submission->getAbstract"
-    remediation: >
-      Apply HTML Purifier or PKPString::stripUnsafeHtml() to bio, abstract, and
-      author name fields. Restrict the iBrowser plugin's allowed HTML tags to a
-      safe allowlist. Encode all user-supplied content with htmlspecialchars()
-      in templates.
-
-  # ============================================================
-  # CROSS-SITE REQUEST FORGERY (CSRF)
-  # ============================================================
-
-  - id: "OJS-SC-CVE-018"
-    name: "CSRF on Payment Types Endpoint (CVE-2023-5626)"
-    description: >
-      The endpoint /payments/savePaymentTypes accepts POST requests to modify
-      publication fees without validating a CSRF token. An attacker can host a
-      malicious HTML page that auto-submits a form to this endpoint. If an
-      authenticated administrator visits the page, all publication, issue,
-      article, and membership fees are silently set to zero, causing financial
-      loss to journal operators.
-    severity: "HIGH"
-    category: "source_code"
-    subcategory: "ojs_specific"
-    cwe: "CWE-352"
-    owasp: "A01:2021"
-    ojs_versions_affected: "< 3.3.0-16"
-    cve_references:
-      - "CVE-2023-5626"
-    taint_analysis:
-      sources:
-        - "$_POST['publicationFee']"
-        - "$_POST['purchaseIssueFee']"
-        - "$_POST['membershipFee']"
-      sinks:
-        - "Dao::update"
-        - "JournalSettingsDAO::updateSetting"
-      sanitizers:
-        - "SessionManager::getManager()->getUserSession()->getCSRFToken()"
-        - "ValidatorFactory::make"
-    pattern_match:
-      type: "regex"
-      patterns:
-        - "savePaymentTypes(?!.*csrfToken|.*validateCsrfToken)"
-        - "\\$_POST\\[.publicationFee.\\](?!.*csrf)"
-        - "method=\"POST\"(?!.*csrfToken)"
-    remediation: >
-      Generate a cryptographically random CSRF token per session and embed it as
-      a hidden field in all state-changing forms. Validate the token server-side
-      before processing any POST/PUT/DELETE requests. Use the SameSite=Strict
-      cookie attribute as an additional defense layer.
-
-  - id: "OJS-SC-CVE-019"
-    name: "Cross-Site Request Forgery – Forced Action Execution (CVE-2023-6671)"
-    description: >
-      OJS endpoints lack consistent CSRF token validation, allowing attackers to
-      force logged-in users to perform unintended privileged actions — such as
-      modifying settings, approving submissions, or changing user roles — simply
-      by tricking them into visiting a crafted page or clicking a link.
-    severity: "HIGH"
-    category: "source_code"
-    subcategory: "ojs_specific"
-    cwe: "CWE-352"
-    owasp: "A01:2021"
-    ojs_versions_affected: "< 3.3.0-16"
-    cve_references:
-      - "CVE-2023-6671"
-    taint_analysis:
-      sources:
-        - "$_POST"
-        - "$_GET"
-      sinks:
-        - "Handler::authorize"
-        - "PKPRouter::route"
-      sanitizers:
-        - "validateCsrfToken"
-        - "SessionManager::getManager"
-    pattern_match:
-      type: "regex"
-      patterns:
-        - "(?s)function\\s+\\w+\\s*\\([^)]*\\)\\s*\\{(?:(?!csrfToken|validateCs\
-          rf).)*?\\$_POST"
-    remediation: >
-      Enforce CSRF token validation as a mandatory step in the PKP middleware
-      stack for all non-GET requests. Audit every Handler method that performs
-      state changes to confirm it calls validateCsrfToken() before acting on
-      POST data.
-
-  # ============================================================
-  # XML EXTERNAL ENTITY (XXE)
-  # ============================================================
-
-  - id: "OJS-SC-CVE-020"
-    name: "XXE via User XML Plugin – Privilege Escalation (CVE-2024-56525)"
-    description: >
-      A critical XXE vulnerability in OJS, OMP, and OPS allows a Journal Editor
-      to upload a crafted User XML file that references external entities.
-      Exploitation can lead to: arbitrary file read on the server (e.g.,
-      /etc/passwd), Server-Side Request Forgery (SSRF), creation of a
-      super-admin account, and installation of a backdoor plugin — resulting in
-      complete system compromise.
-    severity: "CRITICAL"
-    category: "source_code"
-    subcategory: "ojs_specific"
-    cwe: "CWE-611"
-    owasp: "A05:2021"
-    cve_references:
-      - "CVE-2024-56525"
-    taint_analysis:
-      sources:
-        - "file_get_contents"
-        - "$_FILES['importFile']"
-        - "fopen"
-      sinks:
-        - "simplexml_load_string"
-        - "simplexml_load_file"
-        - "DOMDocument::loadXML"
-        - "DOMDocument::load"
-        - "XMLReader::open"
-        - "xml_parse"
-      sanitizers:
-        - "LIBXML_NOENT"
-        - "libxml_disable_entity_loader"
-    pattern_match:
-      type: "regex"
-      patterns:
-        - "simplexml_load_(string|file)\\s*\\(\\s*\\$(?!.*LIBXML_NOENT)"
-        - "DOMDocument\\s*->\\s*loadXML\\s*\\((?!.*LIBXML_NOENT)"
-        - "XMLReader\\s*->\\s*open\\s*\\("
-        - "<!ENTITY\\s+\\w+\\s+SYSTEM\\s+"
-        - "libxml_disable_entity_loader\\s*\\(\\s*false\\s*\\)"
-    remediation: >
-      Disable external entity loading before parsing any XML: call
-      libxml_disable_entity_loader(true) and use LIBXML_NOENT | LIBXML_NONET
-      flags. Validate XML against a strict schema (XSD) before processing.
-      Restrict the User XML Plugin to Site Administrators only and log all
-      import operations.
-
-  # ============================================================
-  # OPEN REDIRECT
-  # ============================================================
-
-  - id: "OJS-SC-CVE-021"
-    name: "Open Redirect via 'source' Parameter on Sign-Out (CVE-2024-7902)"
-    description: >
-      The /login/signOut endpoint in OJS up to version 3.4.0-6 accepts a
-      'source' GET parameter and redirects the user to that URL after logout
-      without validating that the destination is within the application's own
-      domain. Attackers can craft phishing URLs that redirect victims to
-      malicious sites after signing out, facilitating credential harvesting.
-    severity: "MEDIUM"
-    category: "source_code"
-    subcategory: "ojs_specific"
-    cwe: "CWE-601"
-    owasp: "A01:2021"
-    ojs_versions_affected: "<= 3.4.0-6"
-    cve_references:
-      - "CVE-2024-7902"
-    taint_analysis:
-      sources:
-        - "$_GET['source']"
-        - "$_GET['redirectUrl']"
-        - "$_GET['returnTo']"
-      sinks:
-        - "header('Location:')"
-        - "Request::redirect"
-        - "PKPRequest::redirectUrl"
-      sanitizers:
-        - "parse_url"
-        - "filter_var(FILTER_VALIDATE_URL)"
-    pattern_match:
-      type: "regex"
-      patterns:
-        - "header\\s*\\(\\s*.Location:\\s*.\\s*\\.\\s*\\$_(GET|REQUEST|POST)"
-        - "redirect\\s*\\(\\s*\\$_(GET|REQUEST)\\[.(source|returnTo|redirect).\
-          \\]"
-        - "\\$_(GET|REQUEST)\\[.source.\\](?!.*parse_url|.*filter_var)"
-    remediation: >
-      Validate all redirect targets against an allowlist of known internal
-      paths. Use parse_url() to extract the host and verify it matches the
-      application's own domain before redirecting. Reject or ignore the 'source'
-      parameter if it contains an absolute URL pointing to an external domain.
+      Sanitasi output template smarty `search.tpl` pada field pencarian dengan
+      menyematkan variabel escape: value="{$authors|escape}".
+    false_positive_notes: >
+      Paramater ter-escape secara logikal pada bahasa pemrograman PHP back-end
+      sebelum dioper ke instance object Smarty.
+    references:
+      - "https://nvd.nist.gov/vuln/detail/CVE-2018-12229"
+      - "https://github.com/pkp/pkp-lib/issues/3785"

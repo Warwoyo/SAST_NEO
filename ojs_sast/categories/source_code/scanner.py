@@ -29,9 +29,10 @@ EXCLUDE_DIRS = {"cache", "lib/vendor", "node_modules", ".git", "__pycache__", ".
 class SourceCodeScanner:
     """Scans source code files for security vulnerabilities."""
 
-    def __init__(self, rules: list[Rule], target_path: str) -> None:
+    def __init__(self, rules: list[Rule], target_path: str, disable_taint: bool = False) -> None:
         self.rules = [r for r in rules if r.category == "source_code"]
         self.target_path = os.path.abspath(target_path)
+        self.disable_taint = disable_taint
         self.findings: list[Finding] = []
         self.files_scanned = 0
         self._finding_counter = 0
@@ -74,7 +75,7 @@ class SourceCodeScanner:
         tree, source_bytes = parse_php_file(filepath)
 
         # Run taint analysis if AST is available
-        if tree is not None:
+        if tree is not None and not self.disable_taint:
             try:
                 analyzer = TaintAnalyzer(filepath, tree, source_bytes)
                 taint_findings = analyzer.analyze()
