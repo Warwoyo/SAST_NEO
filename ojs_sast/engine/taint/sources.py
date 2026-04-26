@@ -4,6 +4,8 @@ Taint sources are data entry points from untrusted user input.
 Any variable receiving data from these sources is marked as tainted.
 """
 
+import re
+
 # PHP superglobals that contain user-controlled data
 SUPERGLOBALS = frozenset([
     "$_GET", "$_POST", "$_REQUEST", "$_COOKIE",
@@ -61,11 +63,44 @@ ALL_SOURCE_IDENTIFIERS = (
     SUPERGLOBALS | OJS_REQUEST_METHODS | FILE_READS | ENV_VARS
 )
 
-import re
+# --- Compiled Regexes for precise matching ---
 _STRING_LITERAL_RE = re.compile(
     r"^\s*['\"]"    # starts with a quote (single or double)
     r"|^\s*<<<"      # heredoc / nowdoc
 )
+
+
+def _build_source_regex(identifier: str) -> re.Pattern:
+    """Build a compiled regex for a source identifier.
+
+    - Superglobals ($-prefixed): use a negative lookbehind so that
+      e.g. $_GET doesn't match inside $my_GET_value.
+    - Standard functions/methods: use \\b word boundaries.
+    """
+    if identifier.startswith("$"):
+        # Escape the $ and bracket chars, use lookbehind for safety
+        escaped = re.escape(identifier)
+        return re.compile(rf"(?<![a-zA-Z0-9_]){escaped}\b")
+    else:
+        return re.compile(rf"\b{re.escape(identifier)}\b")
+
+
+# Pre-compile regexes per category for is_taint_source / get_source_category
+_SOURCE_REGEXES: dict[str, list[tuple[str, re.Pattern]]] = {}
+for _cat_name, _identifiers in {
+    "superglobals": SUPERGLOBALS,
+    "ojs_request": OJS_REQUEST_METHODS,
+    "file_reads": FILE_READS,
+    "env_vars": ENV_VARS,
+}.items():
+    _SOURCE_REGEXES[_cat_name] = [
+        (ident, _build_source_regex(ident)) for ident in _identifiers
+    ]
+
+# Also compile DATABASE_READS for get_source_category (but NOT for is_taint_source)
+_DB_READ_REGEXES: list[tuple[str, re.Pattern]] = [
+    (ident, _build_source_regex(ident)) for ident in DATABASE_READS
+]
 
 
 def is_taint_source(text: str) -> bool:
@@ -81,25 +116,10 @@ def is_taint_source(text: str) -> bool:
     if _STRING_LITERAL_RE.match(text):
         return False
 
-    # Direct match against superglobals
-    for sg in SUPERGLOBALS:
-        if sg in text:
-            return True
-
-    # Check OJS request methods
-    for method in OJS_REQUEST_METHODS:
-        if method in text:
-            return True
-
-    # Check file reads
-    for func in FILE_READS:
-        if func in text:
-            return True
-
-    # Check env vars
-    for ev in ENV_VARS:
-        if ev in text:
-            return True
+    for _cat, pairs in _SOURCE_REGEXES.items():
+        for _ident, pattern in pairs:
+            if pattern.search(text):
+                return True
 
     return False
 
@@ -110,19 +130,14 @@ def get_source_category(text: str) -> str | None:
     Returns:
         Category name or None if not a source.
     """
-    for sg in SUPERGLOBALS:
-        if sg in text:
-            return "superglobals"
-    for method in OJS_REQUEST_METHODS:
-        if method in text:
-            return "ojs_request"
-    for func in DATABASE_READS:
-        if func in text:
+    for cat, pairs in _SOURCE_REGEXES.items():
+        for _ident, pattern in pairs:
+            if pattern.search(text):
+                return cat
+
+    # Also check DATABASE_READS for categorization purposes
+    for _ident, pattern in _DB_READ_REGEXES:
+        if pattern.search(text):
             return "database_reads"
-    for func in FILE_READS:
-        if func in text:
-            return "file_reads"
-    for ev in ENV_VARS:
-        if ev in text:
-            return "env_vars"
+
     return None

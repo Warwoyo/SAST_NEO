@@ -4,6 +4,8 @@ Sanitizers are functions that clean or validate tainted data,
 removing or neutralizing the taint.
 """
 
+import re
+
 SANITIZERS: dict[str, frozenset[str]] = {
     "sql": frozenset([
         "escapeString", "quote", "mysqli_real_escape_string",
@@ -28,24 +30,52 @@ SANITIZERS: dict[str, frozenset[str]] = {
     ]),
 }
 
-# Flat set for quick lookup
+
+def _build_sanitizer_regex(func: str) -> re.Pattern:
+    """Build a compiled regex for a sanitizer identifier.
+
+    - Type casts like (int): match with optional whitespace inside parens.
+    - Class methods like PKPString::strtoupper: match with optional whitespace
+      around ::.
+    - Standard functions: use \\b word boundaries.
+    """
+    if func.startswith("(") and func.endswith(")"):
+        # Type cast: "(int)" -> r"\(\s*int\s*\)"
+        inner = func[1:-1]
+        return re.compile(rf"\(\s*{re.escape(inner)}\s*\)")
+    elif "::" in func:
+        # Class method: "PKPString::strtoupper" -> r"\bPKPString\s*::\s*strtoupper\b"
+        parts = func.split("::", 1)
+        return re.compile(
+            rf"\b{re.escape(parts[0])}\s*::\s*{re.escape(parts[1])}\b"
+        )
+    else:
+        return re.compile(rf"\b{re.escape(func)}\b")
+
+
+# Pre-compile regexes: list of (func_name, category, compiled_pattern)
+_SANITIZER_REGEXES: list[tuple[str, str, re.Pattern]] = []
+for _category, _funcs in SANITIZERS.items():
+    for _func in _funcs:
+        _SANITIZER_REGEXES.append((_func, _category, _build_sanitizer_regex(_func)))
+
+# Flat set for quick lookup (still useful for debugging / introspection)
 _ALL_SANITIZERS: frozenset[str] = frozenset().union(*SANITIZERS.values())
 
 
 def is_sanitizer(text: str) -> bool:
     """Check if the given text represents a sanitizer."""
-    for s in _ALL_SANITIZERS:
-        if s in text:
+    for _func, _cat, pattern in _SANITIZER_REGEXES:
+        if pattern.search(text):
             return True
     return False
 
 
 def get_sanitizer_category(text: str) -> str | None:
     """Get the sanitizer category for the given text."""
-    for category, funcs in SANITIZERS.items():
-        for func in funcs:
-            if func in text:
-                return category
+    for _func, category, pattern in _SANITIZER_REGEXES:
+        if pattern.search(text):
+            return category
     return None
 
 

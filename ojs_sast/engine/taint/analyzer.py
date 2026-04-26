@@ -10,18 +10,22 @@ from typing import Any
 
 # Database fetch functions — output is trusted (not first-order user input).
 # If a variable is assigned from one of these, its taint chain is truncated.
-DB_FETCH_FUNCTIONS = frozenset([
+_DB_FETCH_FUNCTIONS = [
     "mysql_fetch_row", "mysql_fetch_assoc", "mysql_fetch_array",
     "mysql_fetch_object", "mysqli_fetch_row", "mysqli_fetch_assoc",
     "mysqli_fetch_array", "mysqli_fetch_object",
     "fetch", "fetchRow", "fetchAssoc", "fetchAll",
     "retrieve",
-])
+]
+_DB_FETCH_REGEXES: list[re.Pattern] = [
+    re.compile(rf"\b{re.escape(f)}\b") for f in _DB_FETCH_FUNCTIONS
+]
 
 # OOP objects that are safe when calling generic sink names like execute().
-_SAFE_OBJECT_KEYWORDS = frozenset([
-    "Form", "Filter", "Plugin", "Handler", "Validator",
-])
+_SAFE_OBJECT_PATTERNS: list[re.Pattern] = [
+    re.compile(rf"\b{re.escape(kw)}") for kw in
+    ["Form", "Filter", "Plugin", "Handler", "Validator"]
+]
 
 from ojs_sast.engine.ast_walker import (
     find_nodes_by_types,
@@ -158,7 +162,7 @@ class TaintAnalyzer:
 
                 # Taint Truncation: if the value comes from a DB fetch
                 # function, do NOT propagate taint — DB output is trusted.
-                is_db_fetch = any(dbf in value_text for dbf in DB_FETCH_FUNCTIONS)
+                is_db_fetch = any(p.search(value_text) for p in _DB_FETCH_REGEXES)
                 if is_db_fetch:
                     # If the target was previously tainted, un-taint it.
                     if target in self.tainted_vars:
@@ -225,7 +229,7 @@ class TaintAnalyzer:
                 obj_node = node.child_by_field_name("object")
                 if obj_node:
                     obj_text = get_node_text(obj_node, self.source_bytes)
-                    if any(kw in obj_text for kw in _SAFE_OBJECT_KEYWORDS):
+                    if any(p.search(obj_text) for p in _SAFE_OBJECT_PATTERNS):
                         continue
 
             # Get sink categories
