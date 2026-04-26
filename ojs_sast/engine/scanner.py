@@ -175,7 +175,12 @@ class ScanOrchestrator:
         # Step 3: Run category scanners
         if "source_code" in self.categories:
             disable_taint = is_cve_ojs and not self.enable_taint
-            sc_scanner = SourceCodeScanner(rule_loader.rules, self.target_path, disable_taint=disable_taint)
+            ojs_version = self.ojs_info.version if self.ojs_info else None
+            sc_scanner = SourceCodeScanner(
+                rule_loader.rules, self.target_path,
+                disable_taint=disable_taint,
+                ojs_version=ojs_version,
+            )
             sc_findings = sc_scanner.scan(progress_callback=source_code_callback)
             self.findings.extend(sc_findings)
             self.files_scanned += sc_scanner.files_scanned

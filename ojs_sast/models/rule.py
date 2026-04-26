@@ -17,6 +17,7 @@ class PatternMatchConfig:
     """Pattern matching configuration within a rule."""
     type: str = "regex"  # "regex" or "ast_pattern"
     patterns: list[str] = field(default_factory=list)
+    require_absence: Optional[str] = None  # Pattern that must be ABSENT for a match to trigger
 
 
 @dataclass
@@ -71,6 +72,7 @@ class Rule:
             pattern_config = PatternMatchConfig(
                 type=pattern_data.get("type", "regex"),
                 patterns=pattern_data.get("patterns", []),
+                require_absence=pattern_data.get("require_absence"),
             )
 
         config_data = data.get("config_check")

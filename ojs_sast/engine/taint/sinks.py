@@ -29,7 +29,7 @@ TAINT_SINKS: dict[str, frozenset[str]] = {
         "DOMDocument", "XMLReader",
     ]),
     "deserialization": frozenset([
-        "unserialize", "yaml_parse", "json_decode",
+        "unserialize", "yaml_parse",
     ]),
     "header_injection": frozenset([
         "header", "setcookie",

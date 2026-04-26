@@ -10,7 +10,7 @@ checks:
     pattern_match:
       type: "regex"
       patterns:
-        - 'smtp_auth\s*=\s*(ssl|tls|STARTTLS)'
+        - 'smtp_auth\s*=\s*(?!ssl|tls|STARTTLS)\S+'
     config_check:
       field: "email.smtp_auth"
       condition: "missing"

@@ -69,13 +69,13 @@ class TaintAnalyzer:
     6. If tainted var reaches a sink → generate Finding with TaintPath
     """
 
-    def __init__(self, filepath: str, tree: Any, source_bytes: bytes) -> None:
+    def __init__(self, filepath: str, tree: Any, source_bytes: bytes, finding_id_offset: int = 0) -> None:
         self.filepath = filepath
         self.tree = tree
         self.source_bytes = source_bytes
         self.tainted_vars: dict[str, TaintedVariable] = {}
         self.findings: list[Finding] = []
-        self._finding_counter = 0
+        self._finding_counter = finding_id_offset
 
     def analyze(self) -> list[Finding]:
         """Run taint analysis on the parsed PHP file.
@@ -411,8 +411,8 @@ class TaintAnalyzer:
             category=Category.SOURCE_CODE,
             subcategory=subcategory,
             file_path=self.filepath,
-            line_start=tainted.source_line,
-            line_end=sink_line,
+            line_start=min(tainted.source_line, sink_line),
+            line_end=max(tainted.source_line, sink_line),
             code_snippet=snippet,
             cwe=cwe,
             owasp=owasp,

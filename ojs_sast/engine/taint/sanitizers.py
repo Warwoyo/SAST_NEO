@@ -17,9 +17,13 @@ SANITIZERS: dict[str, frozenset[str]] = {
         "htmlspecialchars", "htmlentities", "strip_tags",
         "stripUnsafeHtml", "getHtmlPurifier",
         "xss_clean", "ENT_QUOTES",
+        "PKPString::stripUnsafeHtml",
     ]),
     "path": frozenset([
         "basename", "realpath", "validatePath",
+    ]),
+    "command": frozenset([
+        "escapeshellarg", "escapeshellcmd",
     ]),
     "general": frozenset([
         "filter_var", "filter_input", "preg_replace",
@@ -90,7 +94,7 @@ def is_effective_sanitizer(sanitizer_text: str, sink_category: str) -> bool:
         "sql_injection": "sql",
         "xss": "xss",
         "file_ops": "path",
-        "rce": None,  # No simple sanitizer for RCE
+        "rce": "command",
         "ssrf": "path",
         "xxe": None,
         "deserialization": None,

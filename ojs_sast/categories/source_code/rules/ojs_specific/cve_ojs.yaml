@@ -128,6 +128,7 @@ rules:
       - "CVE-2025-67892"
     pattern_match:
       type: "regex"
+      require_absence: "checkCSRF"
       patterns:
         - "(?s)public\\s+static\\s+function\\s+login\\s*\\(.*?\\)\\s*\\{(?:(?!c\
           heckCSRF).)*?\\$user->getAuthId"
@@ -363,3 +364,32 @@ rules:
     references:
       - "https://nvd.nist.gov/vuln/detail/CVE-2018-12229"
       - "https://github.com/pkp/pkp-lib/issues/3785"
+
+  - id: "OJS-SC-HOST-001"
+    name: "CVE-2022-26616 - Host Header Injection"
+    description: >
+      Penggunaan $_SERVER['HTTP_HOST'] atau $_SERVER['HTTP_X_FORWARDED_HOST']
+      secara langsung dalam pembuatan URL tanpa validasi daftar host yang
+      diizinkan (whitelist), memungkinkan manipulasi header Host untuk serangan
+      Web Cache Poisoning, Password Reset Poisoning, atau SSRF.
+    severity: "HIGH"
+    category: "source_code"
+    subcategory: "ojs_specific"
+    cwe: "CWE-644"
+    owasp: "A05:2021"
+    ojs_versions_affected: "<= 3.3.0-8"
+    cve_references:
+      - "CVE-2022-26616"
+    pattern_match:
+      type: "regex"
+      patterns:
+        - "\\$_SERVER\\s*\\[\\s*['\"]HTTP_HOST['\"]\\s*\\](?!.*in_array)"
+        - "\\$_SERVER\\s*\\[\\s*['\"]HTTP_X_FORWARDED_HOST['\"]\\s*\\](?!.*in_array)"
+    remediation: >
+      Validasi nilai Host header menggunakan daftar putih (whitelist) melalui
+      in_array() atau pencocokan regex ketat sebelum digunakan dalam URL.
+    false_positive_notes: >
+      Penggunaan $_SERVER['HTTP_HOST'] sudah melewati validasi daftar host yang
+      diizinkan melalui pengecekan allowed_hosts di konfigurasi framework.
+    references:
+      - "https://nvd.nist.gov/vuln/detail/CVE-2022-26616"

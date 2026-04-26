@@ -11,6 +11,10 @@ scanner:
     - node_modules
     - .git
     - __pycache__
+    - tests
+    - tools
+    - lib/pkp/tests
+    - lib/pkp/tools
 
   php_extensions:
     - .php

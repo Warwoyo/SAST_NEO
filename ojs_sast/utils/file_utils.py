@@ -13,6 +13,10 @@ DEFAULT_EXCLUDE_DIRS = {
     ".git",
     "__pycache__",
     ".svn",
+    "tests",
+    "tools",
+    "lib/pkp/tests",
+    "lib/pkp/tools",
 }
 
 
