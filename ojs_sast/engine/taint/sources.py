@@ -75,14 +75,16 @@ def _build_source_regex(identifier: str) -> re.Pattern:
 
     - Superglobals ($-prefixed): use a negative lookbehind so that
       e.g. $_GET doesn't match inside $my_GET_value.
-    - Standard functions/methods: use \\b word boundaries.
+    - Standard functions/methods: must NOT be preceded by $ or ->,
+      and must be followed by an opening parenthesis.
     """
     if identifier.startswith("$"):
         # Escape the $ and bracket chars, use lookbehind for safety
         escaped = re.escape(identifier)
         return re.compile(rf"(?<![a-zA-Z0-9_]){escaped}\b")
     else:
-        return re.compile(rf"\b{re.escape(identifier)}\b")
+        # Require: not preceded by $ or ->, and followed by (
+        return re.compile(rf"(?<!\$)(?<!->)\b{re.escape(identifier)}\s*\(")
 
 
 # Pre-compile regexes per category for is_taint_source / get_source_category

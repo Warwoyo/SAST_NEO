@@ -4,19 +4,20 @@ import re
 TAINT_SINKS: dict[str, frozenset[str]] = {
     "sql_injection": frozenset([
         "query", "retrieve", "mysql_query",
-        "mysqli_query", "pg_query",
+        "mysqli_query", "pg_query", "raw",
     ]),
     "xss": frozenset([
-        "echo", "print", "printf",
+        "echo", "print", "printf", "__",
     ]),
     "rce": frozenset([
         "exec", "shell_exec", "system", "passthru",
         "popen", "proc_open", "eval",
-        "create_function",
+        "create_function", "setServerFileName",
     ]),
     "file_ops": frozenset([
         "include", "include_once", "require", "require_once",
-        "file_get_contents", "fopen", "unlink", "rename",
+        "file_get_contents", "file_put_contents",
+        "fopen", "unlink", "rename",
         "move_uploaded_file", "copy", "readfile",
     ]),
     "ssrf": frozenset([

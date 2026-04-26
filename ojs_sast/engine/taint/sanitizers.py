@@ -37,7 +37,8 @@ def _build_sanitizer_regex(func: str) -> re.Pattern:
     - Type casts like (int): match with optional whitespace inside parens.
     - Class methods like PKPString::strtoupper: match with optional whitespace
       around ::.
-    - Standard functions: use \\b word boundaries.
+    - Standard functions: must NOT be preceded by $ or ->, and must be
+      followed by an opening parenthesis.
     """
     if func.startswith("(") and func.endswith(")"):
         # Type cast: "(int)" -> r"\(\s*int\s*\)"
@@ -50,7 +51,8 @@ def _build_sanitizer_regex(func: str) -> re.Pattern:
             rf"\b{re.escape(parts[0])}\s*::\s*{re.escape(parts[1])}\b"
         )
     else:
-        return re.compile(rf"\b{re.escape(func)}\b")
+        # Require: not preceded by $ or ->, and followed by (
+        return re.compile(rf"(?<!\$)(?<!->)\b{re.escape(func)}\s*\(")
 
 
 # Pre-compile regexes: list of (func_name, category, compiled_pattern)
