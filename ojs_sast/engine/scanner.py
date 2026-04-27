@@ -9,9 +9,7 @@ import uuid
 from datetime import datetime
 
 from ojs_sast.constants import __version__
-from ojs_sast.categories.config.scanner import ConfigScanner
 from ojs_sast.categories.source_code.scanner import SourceCodeScanner
-from ojs_sast.categories.uploaded_file.scanner import UploadedFileScanner
 from ojs_sast.models.finding import Finding, Severity
 from ojs_sast.models.report import ScanReport
 from ojs_sast.reporters.html_reporter import generate_html_report
@@ -28,22 +26,13 @@ class ScanOrchestrator:
     def __init__(
         self,
         target_path: str,
-        categories: list[str] | None = None,
-        nginx_config: str | None = None,
-        apache_config: str | None = None,
         min_severity: str = "INFO",
-        upload_dirs: list[str] | None = None,
         rules_files: list[str] | None = None,
-        enable_taint: bool = False,
     ) -> None:
         self.target_path = os.path.abspath(target_path)
-        self.categories = categories or ["source_code", "config", "uploaded_file"]
-        self.nginx_config = nginx_config
-        self.apache_config = apache_config
+        self.categories = ["source_code"]
         self.min_severity = min_severity
-        self.upload_dirs = upload_dirs or []
         self.rules_files = rules_files or []
-        self.enable_taint = enable_taint
         self.findings: list[Finding] = []
         self.files_scanned = 0
         self.ojs_info: OJSInstallation = detect_ojs(self.target_path)
@@ -81,24 +70,6 @@ class ScanOrchestrator:
 
         return output_dir
 
-    def _resolve_upload_dirs(self) -> list[str]:
-        """Resolve upload directories from OJS config or CLI args."""
-        dirs = list(self.upload_dirs)
-
-        if self.ojs_info:
-            if self.ojs_info.files_dir and os.path.isdir(self.ojs_info.files_dir):
-                dirs.append(self.ojs_info.files_dir)
-            if self.ojs_info.public_files_dir and os.path.isdir(self.ojs_info.public_files_dir):
-                dirs.append(self.ojs_info.public_files_dir)
-
-            # Common OJS upload locations
-            public_dir = os.path.join(self.target_path, "public")
-            if os.path.isdir(public_dir) and public_dir not in dirs:
-                dirs.append(public_dir)
-
-        # Deduplicate
-        return list(dict.fromkeys(dirs))
-
     def get_scan_totals(self) -> dict[str, int]:
         """Pre-calculate the total number of files to scan for progress bars.
 
@@ -115,25 +86,16 @@ class ScanOrchestrator:
                 self.target_path, ALL_EXTENSIONS, EXCLUDE_DIRS
             )
 
-        if "uploaded_file" in self.categories:
-            upload_dirs = self._resolve_upload_dirs()
-            total_uploads = 0
-            for d in upload_dirs:
-                total_uploads += count_files(d, extensions=None, exclude_dirs=set())
-            totals["uploaded_file"] = total_uploads
-
         return totals
 
     def run(
         self,
         source_code_callback=None,
-        upload_callback=None
     ) -> ScanReport:
         """Execute the full scan pipeline.
 
         Args:
             source_code_callback: Callback for source code scanning progress.
-            upload_callback: Callback for upload scanning progress.
 
         Returns:
             ScanReport with all findings and metadata.
@@ -148,12 +110,9 @@ class ScanOrchestrator:
         # Step 2: Load rules
         rule_loader = RuleLoader()
         rules_loaded = 0
-        is_cve_ojs = False
         
         if self.rules_files:
             for rfile in self.rules_files:
-                if "cve_ojs" in rfile.lower():
-                    is_cve_ojs = True
                 
                 # Try to load rule if it exists as an absolute or relative path
                 if os.path.exists(rfile):
@@ -172,37 +131,16 @@ class ScanOrchestrator:
         else:
             rules_loaded = rule_loader.load_all_builtin_rules()
 
-        # Step 3: Run category scanners
+        # Step 3: Run source code scanner
         if "source_code" in self.categories:
-            disable_taint = is_cve_ojs and not self.enable_taint
             ojs_version = self.ojs_info.version if self.ojs_info else None
             sc_scanner = SourceCodeScanner(
                 rule_loader.rules, self.target_path,
-                disable_taint=disable_taint,
                 ojs_version=ojs_version,
             )
             sc_findings = sc_scanner.scan(progress_callback=source_code_callback)
             self.findings.extend(sc_findings)
             self.files_scanned += sc_scanner.files_scanned
-
-        if "config" in self.categories:
-            cfg_scanner = ConfigScanner(
-                rule_loader.rules,
-                self.target_path,
-                nginx_config=self.nginx_config,
-                apache_config=self.apache_config,
-                ojs_config_path=self.ojs_info.config_path if self.ojs_info else None,
-            )
-            cfg_findings = cfg_scanner.scan()
-            self.findings.extend(cfg_findings)
-
-        if "uploaded_file" in self.categories:
-            upload_dirs = self._resolve_upload_dirs()
-            if upload_dirs:
-                uf_scanner = UploadedFileScanner(rule_loader.rules, upload_dirs)
-                uf_findings = uf_scanner.scan(progress_callback=upload_callback)
-                self.findings.extend(uf_findings)
-                self.files_scanned += uf_scanner.files_scanned
 
         # Step 4: Deduplicate and Filter by severity
         self.findings = self._deduplicate_findings(self.findings)

@@ -7,6 +7,15 @@ import click
 from ojs_sast.constants import __version__
 from ojs_sast.utils.logger import logger, setup_logger
 
+from rich.console import Console
+from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, TaskProgressColumn, TimeElapsedColumn
+from rich.table import Table
+from rich.panel import Panel
+from rich.text import Text
+from rich import box
+
+console = Console()
+
 
 # Severity display colors
 SEVERITY_COLORS = {
@@ -73,22 +82,6 @@ def check_system_dependencies() -> None:
 @cli.command()
 @click.argument("target_path", type=click.Path(exists=True))
 @click.option(
-    "--category", "-c",
-    multiple=True,
-    type=click.Choice(["source_code", "config", "uploaded_file"]),
-    help="Scan specific category (can be repeated). Default: all.",
-)
-@click.option(
-    "--nginx-config",
-    type=click.Path(exists=True),
-    help="Path to Nginx configuration file.",
-)
-@click.option(
-    "--apache-config",
-    type=click.Path(exists=True),
-    help="Path to Apache configuration file.",
-)
-@click.option(
     "--min-severity",
     type=click.Choice(["CRITICAL", "HIGH", "MEDIUM", "LOW", "INFO"], case_sensitive=False),
     default="INFO",
@@ -100,12 +93,6 @@ def check_system_dependencies() -> None:
     help="List all individual findings in the console (warning: can be long).",
 )
 @click.option(
-    "--upload-dir",
-    multiple=True,
-    type=click.Path(exists=True),
-    help="Additional upload directory to scan (can be repeated).",
-)
-@click.option(
     "--verbose", "-v",
     is_flag=True,
     help="Enable verbose output.",
@@ -115,22 +102,12 @@ def check_system_dependencies() -> None:
     multiple=True,
     help="Specific rules files to use (e.g., cve_ojs.yaml).",
 )
-@click.option(
-    "--enable-taint",
-    is_flag=True,
-    help="Explicitly enable taint analysis even when using specific rules.",
-)
 def scan(
     target_path: str,
-    category: tuple[str, ...],
-    nginx_config: str | None,
-    apache_config: str | None,
     min_severity: str,
     list_findings: bool,
-    upload_dir: tuple[str, ...],
     verbose: bool,
     rules: tuple[str, ...],
-    enable_taint: bool,
 ) -> None:
     """Run a security scan on an OJS installation.
 
@@ -153,181 +130,122 @@ def scan(
 
     from ojs_sast.engine.scanner import ScanOrchestrator
 
-    categories = list(category) if category else None
-    upload_dirs = list(upload_dir) if upload_dir else None
     rules_files = list(rules) if rules else None
 
     # Print banner
-    click.echo()
-    click.secho(f"OJS-SAST v{__version__} | Scanning: {target_path}", fg="bright_blue", bold=True)
-    click.secho("━" * 50, fg="bright_black")
-    click.echo()
+    console.print()
+    console.print(Panel(
+        Text(f"OJS-SAST v{__version__} | Scanning: {target_path}", style="bold cyan"),
+        box=box.DOUBLE,
+        border_style="blue"
+    ))
+    console.print()
 
     # Run scan
     orchestrator = ScanOrchestrator(
         target_path=target_path,
-        categories=categories,
-        nginx_config=nginx_config,
-        apache_config=apache_config,
         min_severity=min_severity,
-        upload_dirs=upload_dirs,
         rules_files=rules_files,
-        enable_taint=enable_taint,
     )
 
-    # Print OJS info and any warnings cleanly before starting progress bars
+    # Print OJS info and any warnings cleanly
     if orchestrator.ojs_info.is_valid:
-        click.secho(f"✔ OJS installation detected (v{orchestrator.ojs_info.version or 'unknown'})", fg="green")
+        console.print(f"[bold green]✔[/bold green] OJS installation detected (v{orchestrator.ojs_info.version or 'unknown'})")
     else:
-        click.secho("⚠ Target may not be a valid OJS installation", fg="yellow")
+        console.print("[bold yellow]⚠[/bold yellow] Target may not be a valid OJS installation", style="yellow")
 
     for warning in orchestrator.ojs_info.warnings:
-        click.secho(f"⚠ {warning}", fg="yellow")
-    click.echo()
+        console.print(f"[bold yellow]⚠[/bold yellow] {warning}", style="yellow")
+    console.print()
 
     # Get totals for progress bars
     totals = orchestrator.get_scan_totals()
 
-    # Run scan with progress bars
-    class ProgressBarManager:
-        def __init__(self, totals):
-            self.totals = totals
-            self.sc_bar = None
-            self.sc_closed = False
-            self.uf_bar = None
-            self.uf_closed = False
-
-        def update_sc(self, n=1):
-            if self.sc_bar is None:
-                self.sc_bar = click.progressbar(
-                    length=self.totals.get("source_code", 0),
-                    label="[source_code] Scanning PHP files",
-                    show_pos=True,
-                    file=sys.stderr,
-                    fill_char="█",
-                    empty_char="░",
-                )
-                self.sc_bar.__enter__()
+    # Run scan with progress bar
+    total_files = totals.get("source_code", 0)
+    
+    if total_files > 0:
+        with Progress(
+            SpinnerColumn(),
+            TextColumn("[progress.description]{task.description}"),
+            BarColumn(bar_width=None),
+            TaskProgressColumn(),
+            TextColumn("({task.completed}/{task.total})"),
+            TimeElapsedColumn(),
+            console=console,
+            transient=True, # Remove progress bar when finished
+        ) as progress:
+            task = progress.add_task("[cyan]Scanning Source Files", total=total_files)
             
-            if not self.sc_closed:
-                self.sc_bar.update(n)
-                if self.sc_bar.pos >= self.sc_bar.length:
-                    self.sc_bar.__exit__(None, None, None)
-                    self.sc_closed = True
-                    click.echo()
-
-        def update_uf(self, n=1):
-            if self.uf_bar is None:
-                self.uf_bar = click.progressbar(
-                    length=self.totals.get("uploaded_file", 0),
-                    label="[uploaded]    Scanning uploads  ",
-                    show_pos=True,
-                    file=sys.stderr,
-                    fill_char="█",
-                    empty_char="░",
-                )
-                self.uf_bar.__enter__()
-            
-            if not self.uf_closed:
-                self.uf_bar.update(n)
-                if self.uf_bar.pos >= self.uf_bar.length:
-                    self.uf_bar.__exit__(None, None, None)
-                    self.uf_closed = True
-                    click.echo()
-
-    pb_manager = ProgressBarManager(totals)
-
-    report = orchestrator.run(
-        source_code_callback=pb_manager.update_sc,
-        upload_callback=pb_manager.update_uf
-    )
-
-    if pb_manager.sc_bar and not pb_manager.sc_closed:
-        pb_manager.sc_bar.__exit__(None, None, None)
-        click.echo()
-    if pb_manager.uf_bar and not pb_manager.uf_closed:
-        pb_manager.uf_bar.__exit__(None, None, None)
-        click.echo()
+            def update_progress(n=1):
+                progress.update(task, advance=n)
+                
+            report = orchestrator.run(
+                source_code_callback=update_progress,
+            )
+    else:
+        report = orchestrator.run()
 
     # Generate reports
     output_dir = orchestrator.generate_reports(report)
 
     # Print results
-    click.echo()
-    click.secho("━" * 50, fg="bright_black")
-    click.secho("SCAN RESULTS", fg="bright_white", bold=True)
-    click.secho("━" * 50, fg="bright_black")
-    click.echo()
-
-    if list_findings:
+    console.print()
+    
+    if len(report.findings) > 0:
+        table = Table(title="[bold white]SECURITY FINDINGS[/bold white]", box=box.ROUNDED, header_style="bold magenta", expand=True)
+        table.add_column("Severity", justify="center", width=12)
+        table.add_column("Rule ID", style="bold cyan")
+        table.add_column("Finding", style="white")
+        table.add_column("Location", style="dim")
+        
         for finding in report.findings:
             sev = finding.severity.value
             color = SEVERITY_COLORS.get(sev, "white")
-
-            click.secho(f"[{sev:8s}] ", fg=color, nl=False, bold=True)
-            click.secho(f"{finding.rule_id} — {finding.name}", fg="bright_white")
-
-            # File location
-            click.echo(f"  File: {finding.file_path}", nl=False)
-            if finding.line_start > 0:
-                click.echo(f":{finding.line_start}")
-            else:
-                click.echo()
-
-            # Taint path
-            if finding.taint_path:
-                click.secho(
-                    f"  Taint: {finding.taint_path.to_display_string()}",
-                    fg="bright_black",
-                )
-
-            # CWE/OWASP
-            meta_parts = []
-            if finding.cwe:
-                meta_parts.append(finding.cwe)
-            if finding.owasp:
-                meta_parts.append(f"OWASP: {finding.owasp}")
-            if meta_parts:
-                click.echo(f"  {' | '.join(meta_parts)}")
-
-            # Remediation
-            if finding.remediation:
-                fix_preview = finding.remediation[:120]
-                if len(finding.remediation) > 120:
-                    fix_preview += "..."
-                click.secho(f"  Fix:  {fix_preview}", fg="green")
-
-            click.echo()
+            
+            table.add_row(
+                Text(sev, style=f"bold {color}"),
+                finding.rule_id,
+                finding.name,
+                f"{finding.file_path.split('/')[-1]}:{finding.line_start}"
+            )
+        
+        console.print(table)
     else:
-        click.echo(f"Total findings detected: {len(report.findings)}")
-        click.echo("Detailed results have been saved to the report files.")
-        click.echo("Use --list-findings to see them here.")
-        click.echo()
+        console.print(Panel("[bold green]✔ No critical vulnerabilities detected![/bold green]", border_style="green"))
+
+    if not list_findings and len(report.findings) > 0:
+        console.print(f"\n[dim]Detected {len(report.findings)} findings. Use --list-findings for detailed console output or check the reports below.[/dim]")
+
 
     # Summary
-    click.secho("━" * 50, fg="bright_black")
-    summary_parts = []
+    summary_text = []
     for sev in ["CRITICAL", "HIGH", "MEDIUM", "LOW", "INFO"]:
         count = report.summary.get(sev, 0)
         if count > 0:
             color = SEVERITY_COLORS[sev]
-            summary_parts.append(click.style(f"{count} {sev}", fg=color, bold=True))
-    click.echo("SUMMARY: " + " | ".join(summary_parts))
+            summary_text.append(f"[bold {color}]{count} {sev}[/bold {color}]")
+    
+    summary_line = " | ".join(summary_text) if summary_text else "[green]No vulnerabilities[/green]"
+    
+    console.print()
+    console.print(Panel(
+        f"SUMMARY: {summary_line}\n"
+        f"Duration: [bold]{report.scan_duration_seconds:.1f}s[/bold] | "
+        f"Files Scanned: [bold]{report.files_scanned:,}[/bold] | "
+        f"Rules Active: [bold]{report.rules_loaded}[/bold]",
+        title="[bold]Scan Statistics[/bold]",
+        border_style="bright_black"
+    ))
 
-    click.echo(
-        f"Duration: {report.scan_duration_seconds:.1f}s | "
-        f"Files: {report.files_scanned:,} | "
-        f"Rules: {report.rules_loaded}"
-    )
-    click.secho("━" * 50, fg="bright_black")
-
-    click.echo()
-    click.secho("✔ Scan Complete! Reports have been automatically generated.", fg="green", bold=True)
-    click.secho(f"✔ Output Directory: {output_dir}/", fg="green")
-    click.echo("    📄 report.json")
-    click.echo("    📄 report.html")
-    click.echo("    📄 report.sarif")
-    click.echo()
+    console.print()
+    console.print("[bold green]✔ Scan Complete![/bold green] Reports generated in:")
+    console.print(f"  [dim]Directory: {output_dir}[/dim]")
+    console.print("  [blue]📄 report.json[/blue]")
+    console.print("  [blue]📄 report.html[/blue]")
+    console.print("  [blue]📄 report.sarif[/blue]")
+    console.print()
+    console.print()
 
 
 @cli.group()
@@ -338,16 +256,11 @@ def rules() -> None:
 
 @rules.command("list")
 @click.option(
-    "--category", "-c",
-    type=click.Choice(["source_code", "config", "uploaded_file"]),
-    help="Filter by category.",
-)
-@click.option(
     "--severity", "-s",
     type=click.Choice(["CRITICAL", "HIGH", "MEDIUM", "LOW", "INFO"], case_sensitive=False),
     help="Filter by minimum severity.",
 )
-def rules_list(category: str | None, severity: str | None) -> None:
+def rules_list(severity: str | None) -> None:
     """List all available scanning rules."""
     from ojs_sast.rules.loader import RuleLoader
 
@@ -356,32 +269,30 @@ def rules_list(category: str | None, severity: str | None) -> None:
 
     rules_to_show = loader.rules
 
-    if category:
-        rules_to_show = [r for r in rules_to_show if r.category == category]
     if severity:
-        rules_to_show = loader.get_rules_by_severity(severity)
-        if category:
-            rules_to_show = [r for r in rules_to_show if r.category == category]
+        rules_to_show = [r for r in loader.rules if r.severity == severity.upper()]
 
     if not rules_to_show:
-        click.echo("No rules found matching the criteria.")
+        console.print("[yellow]No rules found matching the criteria.[/yellow]")
         return
 
-    click.echo()
-    click.secho(f"{'ID':<25} {'SEVERITY':<10} {'CATEGORY':<15} {'NAME'}", fg="bright_white", bold=True)
-    click.secho("─" * 90, fg="bright_black")
+    table = Table(title="[bold white]Scanning Rules[/bold white]", box=box.SIMPLE)
+    table.add_column("ID", style="bold cyan")
+    table.add_column("Severity")
+    table.add_column("Category")
+    table.add_column("Name")
 
     for rule in sorted(rules_to_show, key=lambda r: r.id):
         sev_color = SEVERITY_COLORS.get(rule.severity, "white")
-        click.echo(
-            f"{rule.id:<25} "
-            f"{click.style(rule.severity, fg=sev_color):<21} "
-            f"{rule.category:<15} "
-            f"{rule.name}"
+        table.add_row(
+            rule.id,
+            Text(rule.severity, style=f"bold {sev_color}"),
+            rule.category,
+            rule.name
         )
 
-    click.echo()
-    click.echo(f"Total: {len(rules_to_show)} rules")
+    console.print(table)
+    console.print(f"\n[bold]Total:[/bold] {len(rules_to_show)} rules")
 
 
 @rules.command("show")
@@ -395,32 +306,35 @@ def rules_show(rule_id: str) -> None:
 
     rule = loader.get_rule(rule_id)
     if not rule:
-        click.secho(f"Rule '{rule_id}' not found.", fg="red")
+        console.print(f"[bold red]✘ Rule '{rule_id}' not found.[/bold red]")
         sys.exit(1)
 
-    click.echo()
     sev_color = SEVERITY_COLORS.get(rule.severity, "white")
-    click.secho(f"Rule: {rule.id}", fg="bright_blue", bold=True)
-    click.secho("─" * 50, fg="bright_black")
-    click.echo(f"Name:        {rule.name}")
-    click.echo(f"Severity:    {click.style(rule.severity, fg=sev_color, bold=True)}")
-    click.echo(f"Category:    {rule.category}")
-    click.echo(f"Subcategory: {rule.subcategory}")
-    if rule.cwe:
-        click.echo(f"CWE:         {rule.cwe}")
-    if rule.owasp:
-        click.echo(f"OWASP:       {rule.owasp}")
-    if rule.cve_references:
-        click.echo(f"CVEs:        {', '.join(rule.cve_references)}")
-    click.echo(f"OJS Versions: {rule.ojs_versions_affected}")
-    click.echo()
-    click.secho("Description:", fg="bright_white", bold=True)
-    click.echo(f"  {rule.description}")
+    
+    details = Table.grid(padding=(0, 2))
+    details.add_row("[bold]Name:[/bold]", rule.name)
+    details.add_row("[bold]Severity:[/bold]", Text(rule.severity, style=f"bold {sev_color}"))
+    details.add_row("[bold]Category:[/bold]", rule.category)
+    details.add_row("[bold]Subcategory:[/bold]", rule.subcategory)
+    if rule.cwe: details.add_row("[bold]CWE:[/bold]", rule.cwe)
+    if rule.owasp: details.add_row("[bold]OWASP:[/bold]", rule.owasp)
+    if rule.cve_references: details.add_row("[bold]CVEs:[/bold]", ", ".join(rule.cve_references))
+    details.add_row("[bold]Versions:[/bold]", rule.ojs_versions_affected)
+
+    console.print(Panel(
+        details,
+        title=f"[bold cyan]Rule: {rule.id}[/bold cyan]",
+        border_style="blue",
+        expand=False
+    ))
+    
+    console.print("\n[bold]Description:[/bold]")
+    console.print(f"  {rule.description}")
+    
     if rule.remediation:
-        click.echo()
-        click.secho("Remediation:", fg="green", bold=True)
-        click.echo(f"  {rule.remediation}")
-    click.echo()
+        console.print("\n[bold green]Remediation:[/bold green]")
+        console.print(f"  {rule.remediation}")
+    console.print()
 
 
 @cli.command()
@@ -429,37 +343,34 @@ def detect(target_path: str) -> None:
     """Verify an OJS installation and detect its version."""
     from ojs_sast.utils.ojs_detector import detect_ojs
 
-    click.echo()
-    click.secho(f"OJS-SAST v{__version__} | Detecting: {target_path}", fg="bright_blue", bold=True)
-    click.secho("━" * 50, fg="bright_black")
+    console.print(Panel(f"[bold cyan]OJS-SAST v{__version__} | Detecting: {target_path}[/bold cyan]"))
 
     info = detect_ojs(target_path)
 
     if info.is_valid:
-        click.secho("✔ Valid OJS installation detected", fg="green", bold=True)
+        console.print("[bold green]✔ Valid OJS installation detected[/bold green]")
     else:
-        click.secho("✘ Not a valid OJS installation", fg="red", bold=True)
+        console.print("[bold red]✘ Not a valid OJS installation[/bold red]")
 
-    click.echo()
-    click.echo(f"  Path:      {info.base_path}")
-    click.echo(f"  Version:   {info.version or 'Unknown'}")
-    click.echo(f"  Config:    {info.config_path or 'Not found'}")
-    click.echo(f"  Public:    {info.public_dir or 'Not found'}")
-    click.echo(f"  Lib:       {info.lib_dir or 'Not found'}")
-    click.echo(f"  Classes:   {info.classes_dir or 'Not found'}")
-    click.echo(f"  Plugins:   {info.plugins_dir or 'Not found'}")
-    click.echo(f"  Files Dir: {info.files_dir or 'Not found'}")
+    details = Table.grid(padding=(0, 2))
+    details.add_row("[bold]Path:[/bold]", info.base_path)
+    details.add_row("[bold]Version:[/bold]", info.version or "Unknown")
+    details.add_row("[bold]Config:[/bold]", info.config_path or "Not found")
+    details.add_row("[bold]Public:[/bold]", info.public_dir or "Not found")
+    details.add_row("[bold]Lib:[/bold]", info.lib_dir or "Not found")
+    details.add_row("[bold]Plugins:[/bold]", info.plugins_dir or "Not found")
+
+    console.print(details)
 
     if info.known_vulnerabilities:
-        click.echo()
-        click.secho("⚠ Known Vulnerabilities:", fg="yellow", bold=True)
+        console.print("\n[bold yellow]⚠ Known Vulnerabilities:[/bold yellow]")
         for vuln in info.known_vulnerabilities:
-            click.secho(f"  • {vuln}", fg="yellow")
+            console.print(f"  [yellow]• {vuln}[/yellow]")
 
     for warning in info.warnings:
-        click.secho(f"  ⚠ {warning}", fg="yellow")
+        console.print(f"  [yellow]⚠ {warning}[/yellow]")
 
-    click.echo()
+    console.print()
 
 
 if __name__ == "__main__":

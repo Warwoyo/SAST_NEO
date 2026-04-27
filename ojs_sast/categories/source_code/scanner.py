@@ -11,8 +11,9 @@ import uuid
 
 from ojs_sast.categories.source_code.php_parser import parse_php_file
 from ojs_sast.categories.source_code.smarty_parser import scan_smarty_template
-from ojs_sast.engine.taint.analyzer import TaintAnalyzer
-from ojs_sast.models.finding import Category, Finding, Severity, TaintPath
+from ojs_sast.engine.ast_matcher import ASTMatcher
+from ojs_sast.engine.ast_walker import get_node_text
+from ojs_sast.models.finding import Category, Finding, Severity
 from ojs_sast.models.rule import Rule
 from ojs_sast.utils.file_utils import find_files, get_code_snippet, read_file_safe
 from ojs_sast.utils.logger import logger
@@ -31,15 +32,13 @@ EXCLUDE_DIRS = {"cache", "lib/vendor", "node_modules", ".git", "__pycache__", ".
 class SourceCodeScanner:
     """Scans source code files for security vulnerabilities."""
 
-    def __init__(self, rules: list[Rule], target_path: str, disable_taint: bool = False, ojs_version: str | None = None) -> None:
+    def __init__(self, rules: list[Rule], target_path: str, ojs_version: str | None = None) -> None:
         self.rules = [r for r in rules if r.category == "source_code"]
         self.target_path = os.path.abspath(target_path)
-        self.disable_taint = disable_taint
         self.ojs_version = ojs_version
         self.findings: list[Finding] = []
         self.files_scanned = 0
         self._finding_counter = 0
-        self._taint_finding_counter = 0  # Global counter for taint finding IDs
 
     def scan(self, progress_callback=None) -> list[Finding]:
         """Run the full source code scan.
@@ -76,24 +75,85 @@ class SourceCodeScanner:
         return self.findings
 
     def _scan_php_file(self, filepath: str) -> None:
-        """Scan a single PHP file with taint analysis and pattern matching."""
+        """Scan a single PHP file with AST structure analysis and pattern matching."""
         tree, source_bytes = parse_php_file(filepath)
-
-        # Run taint analysis if AST is available
-        if tree is not None and not self.disable_taint:
-            try:
-                analyzer = TaintAnalyzer(
-                    filepath, tree, source_bytes,
-                    finding_id_offset=self._taint_finding_counter,
-                )
-                taint_findings = analyzer.analyze()
-                self._taint_finding_counter = analyzer._finding_counter
-                self.findings.extend(taint_findings)
-            except Exception as e:
-                logger.warning(f"Taint analysis failed for {filepath}: {e}")
+        
+        if tree is not None:
+            self._scan_php_ast(filepath, tree, source_bytes)
 
         # Run regex pattern matching from rules
         self._scan_with_patterns(filepath)
+
+    def _scan_php_ast(self, filepath: str, tree: "tree_sitter.Tree", source_bytes: bytes) -> None:
+        """Run AST queries for Code Structure Analysis."""
+        for rule in self.rules:
+            if not self._should_run_rule(rule, filepath):
+                continue
+                
+            if not rule.pattern_match or not rule.pattern_match.patterns:
+                continue
+                
+            for pattern_obj in rule.pattern_match.patterns:
+                if isinstance(pattern_obj, dict):
+                    pattern_type = pattern_obj.get("type", rule.pattern_match.type)
+                    query_string = pattern_obj.get("query", pattern_obj.get("pattern", ""))
+                else:
+                    pattern_type = rule.pattern_match.type
+                    query_string = pattern_obj
+
+                if pattern_type != "ast_pattern" or not query_string:
+                    continue
+
+                try:
+                    matcher = ASTMatcher(query_string)
+                    matches = matcher.match(tree)
+                    
+                    for captures in matches:
+                        # By convention, if a capture named 'target' exists, we use it as the anchor.
+                        # Otherwise we just use the first captured node.
+                        target_nodes = captures.get("target")
+                        if not target_nodes and captures:
+                            target_nodes = list(captures.values())[0]
+                            
+                        if not target_nodes:
+                            continue
+                            
+                        # A capture could have multiple nodes, but we usually just take the first
+                        node = target_nodes[0]
+                        line_num = node.start_point[0] + 1
+                        end_line = node.end_point[0] + 1
+                        matched_text = get_node_text(node, source_bytes)
+                        
+                        snippet = get_code_snippet(filepath, line_num, context=2)
+                        self._finding_counter += 1
+
+                        finding = Finding(
+                            id=f"AST-{self._finding_counter:04d}",
+                            rule_id=rule.id,
+                            name=rule.name,
+                            description=rule.description,
+                            severity=Severity.from_string(rule.severity),
+                            category=Category.SOURCE_CODE,
+                            subcategory=rule.subcategory,
+                            file_path=filepath,
+                            line_start=line_num,
+                            line_end=end_line,
+                            code_snippet=snippet,
+                            cwe=rule.cwe,
+                            owasp=rule.owasp,
+                            cve_references=rule.cve_references,
+                            remediation=rule.remediation,
+                            false_positive_likelihood="LOW",  # AST matches are usually high confidence
+                            references=rule.references,
+                            metadata={"matched_text": matched_text[:200]},
+                        )
+                        self.findings.append(finding)
+                except Exception as e:
+                    if str(e) not in getattr(self, "_logged_errors", set()):
+                        logger.debug(f"Error executing AST rule {rule.id}: {e}")
+                        if not hasattr(self, "_logged_errors"):
+                            self._logged_errors = set()
+                        self._logged_errors.add(str(e))
 
     def _scan_smarty_file(self, filepath: str) -> None:
         """Scan a Smarty template file for XSS patterns."""
@@ -145,7 +205,17 @@ class SourceCodeScanner:
                 if rule.pattern_match.require_absence in content:
                     continue
 
-            for pattern in rule.pattern_match.patterns:
+            for pattern_obj in rule.pattern_match.patterns:
+                if isinstance(pattern_obj, dict):
+                    pattern_type = pattern_obj.get("type", rule.pattern_match.type)
+                    pattern = pattern_obj.get("query", pattern_obj.get("pattern", ""))
+                else:
+                    pattern_type = rule.pattern_match.type
+                    pattern = pattern_obj
+
+                if pattern_type != "regex" or not pattern:
+                    continue
+
                 try:
                     for match in re.finditer(pattern, content, re.MULTILINE):
                         # Calculate line number

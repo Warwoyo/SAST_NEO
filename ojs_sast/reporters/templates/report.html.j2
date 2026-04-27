@@ -649,42 +649,6 @@
                     <p style="font-family: Consolas, monospace; font-size: 14px; background: #f8fafc; padding: 12px; border-radius: 6px; border: 1px solid var(--border); display: block; word-break: break-all;">${f.file_path} : <strong>Line ${f.line_start}</strong></p>
                 </div>`;
 
-            if (f.taint_path) {
-                let steps = f.taint_path.intermediate_steps || [];
-                let pathHtml = `<ul style="list-style-type: none; padding-left: 0; font-family: Consolas, monospace; font-size: 13px; margin: 0;">`;
-                
-                pathHtml += `<li style="margin-bottom: 8px;">🟢 <strong style="color: var(--text-primary);">Source:</strong> ${escapeHtml(f.taint_path.source)} <br><span style="color: #64748b; margin-left: 24px; font-size: 12px;">${escapeHtml(f.taint_path.source_location)}</span></li>`;
-                
-                if (steps.length > 0) {
-                    if (steps.length > 3) {
-                        pathHtml += `<li style="margin-bottom: 8px; padding-left: 24px;">`;
-                        pathHtml += `<button onclick="toggleTaintSteps(this)" style="background: none; border: 1px dashed #cbd5e1; padding: 4px 8px; color: #64748b; border-radius: 4px; cursor: pointer; font-size: 12px; margin-bottom: 4px; font-family: inherit;">+ Show ${steps.length} intermediate steps</button>`;
-                        pathHtml += `<ul class="taint-steps-list" style="display: none; list-style-type: none; padding-left: 0; margin-top: 8px; margin-bottom: 0;">`;
-                        steps.forEach(step => {
-                            pathHtml += `<li style="margin-bottom: 8px; color: #64748b;">↓ ${escapeHtml(step)}</li>`;
-                        });
-                        pathHtml += `</ul></li>`;
-                    } else {
-                        steps.forEach(step => {
-                            pathHtml += `<li style="margin-bottom: 8px; padding-left: 24px; color: #64748b;">↓ ${escapeHtml(step)}</li>`;
-                        });
-                    }
-                }
-                
-                let sinkColor = f.taint_path.sanitized ? "var(--warning)" : "var(--danger)";
-                let sinkIcon = f.taint_path.sanitized ? "🟡" : "🔴";
-                
-                pathHtml += `<li style="margin-top: 4px;">${sinkIcon} <strong style="color: ${sinkColor};">Sink:</strong> ${escapeHtml(f.taint_path.sink)} <br><span style="color: #64748b; margin-left: 24px; font-size: 12px;">${escapeHtml(f.taint_path.sink_location)}</span></li>`;
-                pathHtml += `</ul>`;
-
-                html += `
-                <div class="detail-section">
-                    <h4>Taint Data Flow</h4>
-                    <div style="background: #f8fafc; padding: 12px; border-radius: 6px; border: 1px solid var(--border); overflow-x: auto;">
-                        ${pathHtml}
-                    </div>
-                </div>`;
-            }
 
             if (f.code_snippet) {
                 html += `
@@ -716,16 +680,6 @@
             return div.innerHTML;
         }
 
-        function toggleTaintSteps(btn) {
-            const ul = btn.nextElementSibling;
-            if (ul.style.display === 'none') {
-                ul.style.display = 'block';
-                btn.textContent = '- Hide intermediate steps';
-            } else {
-                ul.style.display = 'none';
-                btn.textContent = '+ Show ' + ul.children.length + ' intermediate steps';
-            }
-        }
 
         document.addEventListener('keydown', e => { if (e.key === 'Escape') closeModal(); });
     </script>

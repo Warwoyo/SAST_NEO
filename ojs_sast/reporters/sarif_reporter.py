@@ -117,48 +117,6 @@ def _build_result(finding: Finding) -> dict:
             "text": finding.code_snippet,
         }
 
-    # Add taint path as code flow
-    if finding.taint_path:
-        tp = finding.taint_path
-        result["codeFlows"] = [
-            {
-                "threadFlows": [
-                    {
-                        "locations": [
-                            {
-                                "location": {
-                                    "message": {"text": f"Source: {tp.source}"},
-                                    "physicalLocation": {
-                                        "artifactLocation": {"uri": tp.source_location.rsplit(":", 1)[0]},
-                                        "region": {"startLine": int(tp.source_location.rsplit(":", 1)[1]) if ":" in tp.source_location else 1},
-                                    },
-                                }
-                            },
-                            *[
-                                {
-                                    "location": {
-                                        "message": {"text": step},
-                                        "physicalLocation": {
-                                            "artifactLocation": {"uri": finding.file_path},
-                                        },
-                                    }
-                                }
-                                for step in tp.intermediate_steps
-                            ],
-                            {
-                                "location": {
-                                    "message": {"text": f"Sink: {tp.sink}"},
-                                    "physicalLocation": {
-                                        "artifactLocation": {"uri": tp.sink_location.rsplit(":", 1)[0]},
-                                        "region": {"startLine": int(tp.sink_location.rsplit(":", 1)[1]) if ":" in tp.sink_location else 1},
-                                    },
-                                }
-                            },
-                        ]
-                    }
-                ]
-            }
-        ]
 
     # Add fix/remediation
     if finding.remediation:
