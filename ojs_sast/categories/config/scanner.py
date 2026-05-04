@@ -27,7 +27,9 @@ class ConfigScanner:
         apache_config: str | None = None,
         ojs_config_path: str | None = None,
     ) -> None:
-        self.rules = [r for r in rules if r.category == "config"]
+        self.rules = [r for r in rules if r.category in (
+            "config", "configuration", "webserver_configuration"
+        )]
         self.target_path = os.path.abspath(target_path)
         self.nginx_config = nginx_config
         self.apache_config = apache_config
@@ -74,7 +76,20 @@ class ConfigScanner:
         if not sections:
             return
 
-        ojs_rules = [r for r in self.rules if r.subcategory in ("ojs", "database", "security_settings", "email", "files")]
+        ojs_rules = [r for r in self.rules if (
+            r.subcategory in (
+                "ojs", "database", "security_settings", "email", "files",
+            )
+            or (
+                r.category == "configuration"
+                and r.subcategory in (
+                    "cryptography", "input_validation", "network_access",
+                    "network_trust", "session_security", "transport_security",
+                    "access_control", "authentication", "information_disclosure",
+                    "file_permissions", "availability",
+                )
+            )
+        )]
 
         for rule in ojs_rules:
             if rule.config_check:
@@ -87,7 +102,18 @@ class ConfigScanner:
         parser = NginxConfigParser()
         parser.parse(filepath)
 
-        nginx_rules = [r for r in self.rules if r.subcategory in ("nginx", "nginx_security")]
+        nginx_rules = [r for r in self.rules if (
+            r.subcategory in ("nginx", "nginx_security")
+            or (
+                r.category == "webserver_configuration"
+                and r.subcategory in (
+                    "file_upload_security", "sensitive_file_exposure",
+                    "cryptographic_configuration", "security_headers",
+                    "transport_security", "information_disclosure",
+                    "access_control", "denial_of_service", "nginx_specific",
+                )
+            )
+        )]
 
         for rule in nginx_rules:
             if rule.pattern_match:

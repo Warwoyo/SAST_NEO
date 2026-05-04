@@ -145,7 +145,21 @@ class SourceCodeScanner:
                 if rule.pattern_match.require_absence in content:
                     continue
 
-            for pattern in rule.pattern_match.patterns:
+            # Determine which patterns are usable as regex
+            # For ast_pattern rules, only use patterns explicitly marked type:"regex"
+            if rule.pattern_match.type == "ast_pattern":
+                regex_patterns = []
+                for raw_p in rule.pattern_match.raw_patterns:
+                    if isinstance(raw_p, dict) and raw_p.get("type") == "regex":
+                        query = raw_p.get("query", "")
+                        if query:
+                            regex_patterns.append(query.strip())
+                if not regex_patterns:
+                    continue  # Pure AST rule — skip in regex scanning
+            else:
+                regex_patterns = rule.pattern_match.patterns
+
+            for pattern in regex_patterns:
                 try:
                     for match in re.finditer(pattern, content, re.MULTILINE):
                         # Calculate line number

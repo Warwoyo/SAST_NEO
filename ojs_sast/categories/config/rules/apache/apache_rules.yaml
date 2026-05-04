@@ -1,0 +1,323 @@
+rules:
+  # ==============================================================================
+  # OJS WEB SERVER (APACHE / .htaccess) SAST — SECURITY RULESET (v1.0)
+  # ==============================================================================
+  # Coverage   : 10 misconfiguration checks
+  # Scope      : .htaccess / apache2.conf / httpd.conf
+  # Standards  : CIS Apache Benchmark v2.0, OWASP Top 10:2025 (A05)
+  # Target     : Production OJS deployments — Apache virtual host config
+  # ==============================================================================
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # OJS-AP-001 | CWE-434 | CRITICAL
+  # PHP Execution Not Disabled in OJS Upload Directories
+  # ─────────────────────────────────────────────────────────────────────────────
+  - id: "OJS-AP-001"
+    name: "PHP Execution Not Disabled in OJS Upload/Files Directory"
+    description: >
+      OJS upload directories (files/, public/, uploads/) must have PHP execution
+      disabled via 'php_flag engine off' or equivalent. Without this, an uploaded
+      PHP file can be executed directly via HTTP, leading to RCE.
+    severity: "CRITICAL"
+    category: "webserver_configuration"
+    subcategory: "file_upload_security"
+    cwe: "CWE-434"
+    owasp: "A05:2025"
+    confidence: "HIGH"
+    pattern_match:
+      type: "regex"
+      scope: "file"
+      patterns:
+        - id: "P-AP-001-A"
+          description: "Absence of php_flag engine off in upload directory .htaccess"
+          query: >
+            ^(?![\s\S]*php_flag\s+engine\s+off)[\s\S]*$
+          note: "Run as full-file absence check on .htaccess in upload dirs"
+    remediation: >
+      Add to .htaccess in the upload directory:
+        php_flag engine off
+        RemoveHandler .php .phtml .php3 .php4 .php5 .phps
+        AddType text/plain .php .phtml .php3 .php4 .php5 .phps
+    references:
+      - "https://docs.pkp.sfu.ca/admin-guide/en/deploy-server"
+      - "https://www.cisecurity.org/benchmark/apache_http_server"
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # OJS-AP-002 | CWE-538 | CRITICAL
+  # config.inc.php Not Protected from Direct Web Access
+  # ─────────────────────────────────────────────────────────────────────────────
+  - id: "OJS-AP-002"
+    name: "OJS config.inc.php Accessible via HTTP — Credential Exposure"
+    description: >
+      The OJS config.inc.php file contains database credentials, encryption keys,
+      and SMTP passwords. Apache must deny direct HTTP access to this file.
+    severity: "CRITICAL"
+    category: "webserver_configuration"
+    subcategory: "sensitive_file_exposure"
+    cwe: "CWE-538"
+    owasp: "A05:2025"
+    confidence: "HIGH"
+    pattern_match:
+      type: "regex"
+      scope: "file"
+      patterns:
+        - id: "P-AP-002-A"
+          description: "Absence of deny rule for config.inc.php"
+          query: >
+            ^(?![\s\S]*<Files\s+["']?config\.inc\.php["']?\s*>[\s\S]*(?:Require\s+all\s+denied|Deny\s+from\s+all))[\s\S]*$
+          note: "Full-file absence check"
+    remediation: >
+      Add to Apache config or .htaccess:
+        <Files "config.inc.php">
+            Require all denied
+        </Files>
+    references:
+      - "https://docs.pkp.sfu.ca/admin-guide/en/deploy-security"
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # OJS-AP-003 | CWE-548 | HIGH
+  # Directory Listing Enabled (Options +Indexes)
+  # ─────────────────────────────────────────────────────────────────────────────
+  - id: "OJS-AP-003"
+    name: "Directory Listing Enabled — File Enumeration via Browser"
+    description: >
+      Options +Indexes or Options Indexes enables Apache directory listing,
+      exposing uploaded files, plugin source, and internal structure.
+    severity: "HIGH"
+    category: "webserver_configuration"
+    subcategory: "information_disclosure"
+    cwe: "CWE-548"
+    owasp: "A05:2025"
+    confidence: "HIGH"
+    pattern_match:
+      type: "regex"
+      scope: "line"
+      patterns:
+        - id: "P-AP-003-A"
+          description: "Options +Indexes or Options Indexes explicitly enabled"
+          query: >
+            ^\s*Options\s+.*\+?Indexes
+    remediation: >
+      Replace with:
+        Options -Indexes
+    references:
+      - "https://www.cisecurity.org/benchmark/apache_http_server"
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # OJS-AP-004 | CWE-200 | HIGH
+  # ServerSignature / ServerTokens Disclosing Version
+  # ─────────────────────────────────────────────────────────────────────────────
+  - id: "OJS-AP-004"
+    name: "ServerSignature On or ServerTokens Full — Version Disclosure"
+    description: >
+      ServerSignature On embeds Apache version in error pages.
+      ServerTokens Full sends version in Server HTTP header.
+    severity: "HIGH"
+    category: "webserver_configuration"
+    subcategory: "information_disclosure"
+    cwe: "CWE-200"
+    owasp: "A05:2025"
+    confidence: "HIGH"
+    pattern_match:
+      type: "regex"
+      scope: "line"
+      patterns:
+        - id: "P-AP-004-A"
+          description: "ServerSignature enabled"
+          query: >
+            ^\s*ServerSignature\s+On
+        - id: "P-AP-004-B"
+          description: "ServerTokens set to Full or OS"
+          query: >
+            ^\s*ServerTokens\s+(?:Full|OS|Major|Minor)
+    remediation: >
+      Set in apache2.conf:
+        ServerSignature Off
+        ServerTokens Prod
+    references:
+      - "https://www.cisecurity.org/benchmark/apache_http_server"
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # OJS-AP-005 | CWE-319 | HIGH
+  # Missing HSTS Header
+  # ─────────────────────────────────────────────────────────────────────────────
+  - id: "OJS-AP-005"
+    name: "Missing Strict-Transport-Security Header"
+    description: >
+      Without HSTS, users are vulnerable to SSL stripping on first visit.
+    severity: "HIGH"
+    category: "webserver_configuration"
+    subcategory: "transport_security"
+    cwe: "CWE-319"
+    owasp: "A05:2025"
+    confidence: "HIGH"
+    pattern_match:
+      type: "regex"
+      scope: "file"
+      patterns:
+        - id: "P-AP-005-A"
+          description: "HSTS header absent from config"
+          query: >
+            ^(?![\s\S]*Header\s+(?:always\s+)?set\s+Strict-Transport-Security)[\s\S]*$
+    remediation: >
+      Add to Apache SSL VirtualHost:
+        Header always set Strict-Transport-Security "max-age=31536000; includeSubDomains"
+    references:
+      - "https://owasp.org/www-project-secure-headers/"
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # OJS-AP-006 | CWE-1021 | MEDIUM
+  # Missing X-Frame-Options Header
+  # ─────────────────────────────────────────────────────────────────────────────
+  - id: "OJS-AP-006"
+    name: "Missing X-Frame-Options Header — Clickjacking Risk"
+    description: >
+      Without X-Frame-Options, the OJS interface can be embedded in an iframe
+      on a malicious site for clickjacking attacks.
+    severity: "MEDIUM"
+    category: "webserver_configuration"
+    subcategory: "security_headers"
+    cwe: "CWE-1021"
+    owasp: "A05:2025"
+    confidence: "HIGH"
+    pattern_match:
+      type: "regex"
+      scope: "file"
+      patterns:
+        - id: "P-AP-006-A"
+          description: "X-Frame-Options header absent"
+          query: >
+            ^(?![\s\S]*Header\s+(?:always\s+)?(?:set|append)\s+X-Frame-Options)[\s\S]*$
+    remediation: >
+      Add:
+        Header always set X-Frame-Options "DENY"
+    references:
+      - "https://owasp.org/www-project-secure-headers/"
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # OJS-AP-007 | CWE-79 | MEDIUM
+  # Missing X-Content-Type-Options Header
+  # ─────────────────────────────────────────────────────────────────────────────
+  - id: "OJS-AP-007"
+    name: "Missing X-Content-Type-Options Header — MIME Sniffing Risk"
+    description: >
+      Without X-Content-Type-Options: nosniff, browsers may MIME-sniff
+      uploaded files and execute them as HTML/JavaScript.
+    severity: "MEDIUM"
+    category: "webserver_configuration"
+    subcategory: "security_headers"
+    cwe: "CWE-79"
+    owasp: "A05:2025"
+    confidence: "HIGH"
+    pattern_match:
+      type: "regex"
+      scope: "file"
+      patterns:
+        - id: "P-AP-007-A"
+          description: "X-Content-Type-Options header absent"
+          query: >
+            ^(?![\s\S]*Header\s+(?:always\s+)?set\s+X-Content-Type-Options)[\s\S]*$
+    remediation: >
+      Add:
+        Header always set X-Content-Type-Options "nosniff"
+    references:
+      - "https://owasp.org/www-project-secure-headers/"
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # OJS-AP-008 | CWE-326 | CRITICAL
+  # Deprecated SSL/TLS Protocols Enabled
+  # ─────────────────────────────────────────────────────────────────────────────
+  - id: "OJS-AP-008"
+    name: "Deprecated TLS Protocols Enabled (SSLv3, TLS 1.0, TLS 1.1)"
+    description: >
+      SSLProtocol directive includes deprecated protocol versions vulnerable
+      to POODLE, BEAST, and other attacks.
+    severity: "CRITICAL"
+    category: "webserver_configuration"
+    subcategory: "cryptographic_configuration"
+    cwe: "CWE-326"
+    owasp: "A02:2021"
+    confidence: "HIGH"
+    pattern_match:
+      type: "regex"
+      scope: "line"
+      patterns:
+        - id: "P-AP-008-A"
+          description: "SSLv2 or SSLv3 listed in SSLProtocol"
+          query: >
+            ^\s*SSLProtocol\s+.*\bSSLv[23]\b
+        - id: "P-AP-008-B"
+          description: "TLS 1.0 listed in SSLProtocol"
+          query: >
+            ^\s*SSLProtocol\s+.*\bTLSv1\b(?!\.[23])
+        - id: "P-AP-008-C"
+          description: "TLS 1.1 listed in SSLProtocol"
+          query: >
+            ^\s*SSLProtocol\s+.*\bTLSv1\.1\b
+    remediation: >
+      Set in Apache SSL config:
+        SSLProtocol -all +TLSv1.2 +TLSv1.3
+    references:
+      - "https://ssl-config.mozilla.org/"
+      - "https://www.cisecurity.org/benchmark/apache_http_server"
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # OJS-AP-009 | CWE-538 | HIGH
+  # Hidden Files (.git, .env, .svn) Accessible
+  # ─────────────────────────────────────────────────────────────────────────────
+  - id: "OJS-AP-009"
+    name: "Hidden Files Not Protected — .git/.env/.svn Accessible"
+    description: >
+      Without explicit deny rules for dot-files, .git repositories, .env files,
+      and .svn metadata are directly accessible via HTTP.
+    severity: "HIGH"
+    category: "webserver_configuration"
+    subcategory: "sensitive_file_exposure"
+    cwe: "CWE-538"
+    owasp: "A05:2025"
+    confidence: "HIGH"
+    pattern_match:
+      type: "regex"
+      scope: "file"
+      patterns:
+        - id: "P-AP-009-A"
+          description: "No deny rule for dot-files"
+          query: >
+            ^(?![\s\S]*<(?:Files|FilesMatch|Directory)\s+[^>]*\.(?:git|env|svn|htpasswd)[^>]*>[\s\S]*?(?:Require\s+all\s+denied|Deny\s+from\s+all))[\s\S]*$
+    remediation: >
+      Add to Apache config:
+        <FilesMatch "^\.">
+            Require all denied
+        </FilesMatch>
+    references:
+      - "https://www.cisecurity.org/benchmark/apache_http_server"
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # OJS-AP-010 | CWE-693 | MEDIUM
+  # Missing Content-Security-Policy Header
+  # ─────────────────────────────────────────────────────────────────────────────
+  - id: "OJS-AP-010"
+    name: "Missing Content-Security-Policy Header — XSS Mitigation Absent"
+    description: >
+      Without CSP, the browser has no policy restricting script sources,
+      making XSS exploitation trivially effective.
+    severity: "MEDIUM"
+    category: "webserver_configuration"
+    subcategory: "security_headers"
+    cwe: "CWE-693"
+    owasp: "A05:2025"
+    confidence: "MEDIUM"
+    pattern_match:
+      type: "regex"
+      scope: "file"
+      patterns:
+        - id: "P-AP-010-A"
+          description: "Content-Security-Policy header absent"
+          query: >
+            ^(?![\s\S]*Header\s+(?:always\s+)?set\s+Content-Security-Policy)[\s\S]*$
+    remediation: >
+      Add a baseline CSP:
+        Header always set Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'"
+    references:
+      - "https://owasp.org/www-project-secure-headers/"
+      - "https://developer.mozilla.org/en-US/docs/Web/HTTP/CSP"
