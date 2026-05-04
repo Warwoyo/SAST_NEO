@@ -80,12 +80,14 @@ def _build_rule(finding: Finding) -> dict:
         "helpUri": finding.references[0] if finding.references else "",
     }
 
+    rule["properties"] = {
+        "tags": [finding.category.value, finding.subcategory],
+    }
+    
     if finding.cwe:
-        rule["properties"] = {
-            "tags": [finding.cwe],
-        }
-        if finding.owasp:
-            rule["properties"]["tags"].append(finding.owasp)
+        rule["properties"]["tags"].append(finding.cwe)
+    if finding.owasp:
+        rule["properties"]["tags"].append(finding.owasp)
 
     return rule
 

@@ -375,7 +375,9 @@
                 <div class="bar-chart" id="chart-category">
                     {% for cat, cat_findings in by_category.items() %}
                     <div class="bar-row">
-                        <span class="bar-label">{{ cat|capitalize }}</span>
+                        <span class="bar-label">
+                            {% if cat == 'config' %}Configuration{% elif cat == 'source_code' %}Source Code{% elif cat == 'uploaded_file' %}Uploaded File{% else %}{{ cat|replace('_', ' ')|title }}{% endif %}
+                        </span>
                         <div class="bar-track">
                             <div class="bar-fill" id="bar-fill-cat-{{ cat }}" style="width: {{ (cat_findings|length / total * 100)|round(1) }}%; background: #4b5563;"></div>
                         </div>
@@ -451,7 +453,7 @@
                     <td><span class="badge badge-{{ finding.severity }}">{{ finding.severity }}</span></td>
                     <td style="font-family: Consolas, monospace; font-weight: bold;">{{ finding.rule_id }}</td>
                     <td style="font-weight: bold;">{{ finding.name }}</td>
-                    <td>{{ finding.category|replace('_', ' ')|capitalize }}</td>
+                    <td>{% if finding.category == 'config' %}Configuration{% elif finding.category == 'source_code' %}Source Code{% elif finding.category == 'uploaded_file' %}Uploaded File{% else %}{{ finding.category|replace('_', ' ')|title }}{% endif %}</td>
                     <td style="font-size: 13px; max-width: 300px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="{{ finding.file_path }}">{{ finding.file_path.split('/')[-1] }}</td>
                     <td style="font-weight: bold;">{{ finding.line_start }}</td>
                     <td>{% if finding.cwe %}<span class="meta-tag">{{ finding.cwe }}</span>{% else %}—{% endif %}</td>
