@@ -1,0 +1,1214 @@
+rules:
+  # ==============================================================================
+  # OJS EXTENDED SAST — SOURCE CODE VULNERABILITY RULESET  (v2.0)
+  # ==============================================================================
+  # Coverage   : 12 CVEs (CVE-2018 through CVE-2025)
+  # Scope      : PHP source code, Smarty .tpl templates
+  # Language   : English
+  # Pattern    : Regex / Tree-sitter AST (PHP grammar)
+  # Author     : Extended SAST Research — Putu Divakara Mataram
+  # Framework  : OJS-aware (PKP-WAL MVC routing, Smarty templating,
+  #              Illuminate DB query builder, FormValidator system)
+  # ==============================================================================
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # OJS-SC-CVE-001 | CVE-2025-67890 | CWE-22 | HIGH
+  # Path Traversal → Arbitrary File Overwrite (→ RCE) in NativeXmlIssueGalleyFilter
+  # ─────────────────────────────────────────────────────────────────────────────
+  - id: "OJS-SC-CVE-001"
+    name: "CVE-2025-67890 — Unsanitized XML Filename Assigned to setServerFileName"
+    description: >
+      The Native XML Import/Export Plugin's NativeXmlIssueGalleyFilter reads the
+      <file_name> XML child tag of <issue_file> via DOMElement->textContent and
+      directly passes that raw string to $issueFile->setServerFileName() without any
+      character sanitization. An authenticated Journal Editor or Production Editor
+      can craft a malicious XML import archive containing path traversal sequences
+      (e.g., "../../config.inc.php" or "../uploads/malicious.php") inside the
+      <file_name> tag. When the import is executed, the raw input is used as the
+      physical filename on the server, leading to arbitrary file overwrite. If the
+      server is writable, this can be escalated to Remote Code Execution (RCE) by
+      writing a PHP web shell to a publicly accessible directory.
+    severity: "HIGH"
+    category: "source_code"
+    subcategory: "ojs_specific"
+    cwe: "CWE-22"
+    owasp: "A01:2021"
+    confidence: "HIGH"
+    ojs_versions_affected: "<= 3.3.0-21, <= 3.4.0-9, <= 3.5.0-1"
+    cve_references:
+      - "CVE-2025-67890"
+    scan_scope:
+      file_paths:
+        - "plugins/importexport/native/filter/NativeXmlIssueGalleyFilter.php"
+        - "plugins/importexport/native/filter/NativeXmlIssueGalleyFilter.inc.php"
+      target_functions:
+        - "handleElement"
+    taint_analysis:
+      sources:
+        - "$o->textContent"         # DOMElement raw text from parsed XML <file_name> tag
+        - "$node->textContent"      # Alias pattern in some branches
+      sinks:
+        - "setServerFileName()"     # Sets physical filename on disk via PKPFile model
+      sanitizers:
+        - "preg_replace('/[^a-z0-9\\.\\-]+/', '', ...)"
+        - "str_replace([' ', '_', ':'], '-', ...)"
+        - "strtolower(...)"
+        - "basename(...)"           # Partial mitigation only — see false_positive_conditions
+      propagation_path: >
+        XML <file_name> tag
+          → DOMElement->textContent ($o->textContent)
+          → [NO sanitization]
+          → $issueFile->setServerFileName($o->textContent)
+          → Physical file path used for write operation
+    pattern_match:
+      type: "ast_pattern"
+      patterns:
+        - description: "Direct textContent assignment to setServerFileName in switch/case"
+          query: >
+            (expression_statement
+              (member_call_expression
+                name: (name) @method (#eq? @method "setServerFileName")
+                arguments: (arguments
+                  (argument
+                    (member_access_expression
+                      name: (name) @prop (#eq? @prop "textContent")
+                    )
+                  )
+                )
+              )
+            )
+        - description: "setServerFileName inside a match/switch arm"
+          query: >
+            (match_arm
+              body: (expression_statement
+                (member_call_expression
+                  name: (name) @method (#eq? @method "setServerFileName")
+                  arguments: (arguments
+                    (argument
+                      (member_access_expression
+                        name: (name) @prop (#eq? @prop "textContent")
+                      )
+                    )
+                  )
+                )
+              )
+            )
+    false_positive_conditions:
+      - id: "FP-001-A"
+        verdict: "SAFE — suppress alert"
+        condition: >
+          The textContent value is processed through BOTH preg_replace with strict
+          allowlist pattern '/[^a-z0-9\\.\\-]+/' AND str_replace for space/underscore/
+          colon normalization AND strtolower(), all chained before reaching
+          setServerFileName(). The presence of all three transformations in sequence
+          constitutes the canonical patch.
+      - id: "FP-001-B"
+        verdict: "SAFE — suppress alert"
+        condition: >
+          The filename is entirely system-generated (e.g., uniqid() or md5()) with no
+          user-controlled characters incorporated into the value that reaches
+          setServerFileName(). User input is not involved in the sink argument.
+      - id: "FP-001-C"
+        verdict: "REVIEW NEEDED — do not suppress"
+        condition: >
+          Only basename() is applied without any additional regex allowlist. basename()
+          alone provides incomplete protection; null-byte injection (\x00) or special
+          OS characters may bypass it depending on the PHP version and OS. Flag for
+          manual review.
+    remediation: >
+      Apply the canonical patch: sanitize the filename using preg_replace and
+      str_replace before passing to setServerFileName(). Example:
+        $issueFile->setServerFileName(trim(
+          preg_replace('/[^a-z0-9\\.\\-]+/', '',
+            str_replace([' ', '_', ':'], '-', strtolower($o->textContent))
+          )
+        ));
+      Additionally, enforce a maximum filename length and prepend a unique prefix
+      (uniqid()) to further reduce collision and enumeration risk.
+    references:
+      - "https://github.com/pkp/pkp-lib/issues/11973"
+      - "http://karmainsecurity.com/KIS-2025-11"
+      - "https://seclists.org/fulldisclosure/2025/Dec/33"
+
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # OJS-SC-CVE-002 | CVE-2025-67893 | CWE-94 | HIGH
+  # LESS Code Injection via Unsanitized Theme Color Option (→ SSRF / File Read)
+  # ─────────────────────────────────────────────────────────────────────────────
+  - id: "OJS-SC-CVE-002"
+    name: "CVE-2025-67893 — Unsanitized baseColour Injected into LESS Parser Variables"
+    description: >
+      The DefaultThemePlugin reads the 'baseColour' value from the Theme Settings API
+      (endpoint: .../api/v1/contexts/{id}/theme) via $this->getOption('baseColour')
+      and concatenates it directly into a LESS variable string that is subsequently
+      passed to the Less_Parser engine. Because the 'baseColour' value is stored from
+      user-controlled API input without validation, an authenticated Journal Editor or
+      Manager can supply an arbitrary LESS payload instead of a hex color code. The
+      LESS parser (Less_Parser::parse()) can be abused to trigger Server-Side Request
+      Forgery (SSRF) via @import url() directives or to read local files via
+      data-uri() or similar LESS functions, depending on the parser version and
+      configuration.
+    severity: "HIGH"
+    category: "source_code"
+    subcategory: "ojs_specific"
+    cwe: "CWE-94"
+    owasp: "A03:2021"
+    confidence: "HIGH"
+    ojs_versions_affected: "<= 3.3.0-21, <= 3.4.0-9, <= 3.5.0-1"
+    cve_references:
+      - "CVE-2025-67893"
+    scan_scope:
+      file_paths:
+        - "plugins/themes/default/DefaultThemePlugin.inc.php"
+        - "plugins/themes/default/DefaultThemePlugin.php"
+      target_functions:
+        - "init"
+        - "saveOption"
+    taint_analysis:
+      sources:
+        - "$this->getOption('baseColour')"   # Theme option value from DB (user-set via API)
+        - "$baseColour"                       # Local variable bound from getOption
+      sinks:
+        - "$additionalLessVariables[]"        # Array passed to LESS compiler
+        - "Less_Parser::parse()"              # Underlying LESS parser execution
+        - "PKPTemplateManager::compileLess()" # OJS wrapper around Less_Parser
+      sanitizers:
+        - "preg_match('/^#[0-9a-fA-F]{1,6}$/', $value)"  # Validates hex color format
+      propagation_path: >
+        Theme Settings API POST (baseColour param)
+          → saveOption() stores raw value in DB
+          → init() retrieves: $this->getOption('baseColour')
+          → string concatenation: '@bg-base:' . $this->getOption('baseColour') . ';'
+          → appended to $additionalLessVariables[]
+          → Less_Parser::parse($additionalLessVariables) — code injection executed
+    pattern_match:
+      type: "ast_pattern"
+      patterns:
+        - description: "Direct getOption result concatenated into LESS variable string"
+          query: >
+            (expression_statement
+              (assignment_expression
+                left: (subscript_expression
+                  object: (variable_name) @var
+                  (#match? @var "\\$additionalLessVariables")
+                )
+                right: (binary_expression
+                  operator: "."
+                  (member_call_expression
+                    object: (variable_name) @this (#eq? @this "$this")
+                    name: (name) @method (#eq? @method "getOption")
+                  )
+                )
+              )
+            )
+        - description: "Regex pattern — getOption result concatenated without prior preg_match guard"
+          type: "regex"
+          query: >
+            \$additionalLessVariables\[\]\s*=\s*['"]@[a-z\-]+:\s*['"]\s*\.\s*\$this->getOption\s*\(\s*['"]baseColour['"]\s*\)
+    false_positive_conditions:
+      - id: "FP-002-A"
+        verdict: "SAFE — suppress alert"
+        condition: >
+          The value retrieved from getOption('baseColour') is validated via
+          preg_match('/^#[0-9a-fA-F]{1,6}$/', $value) BEFORE being assigned to the
+          $additionalLessVariables array. This is the canonical patch that strictly
+          limits input to valid CSS hex color codes.
+      - id: "FP-002-B"
+        verdict: "SAFE — suppress alert"
+        condition: >
+          The saveOption() override already enforces the hex color regex at the point
+          of persistence, AND the init() logic falls back to the hardcoded default
+          ('#1E6292') when validation fails — meaning no attacker-controlled value
+          can reach the LESS parser.
+      - id: "FP-002-C"
+        verdict: "REVIEW NEEDED — do not suppress"
+        condition: >
+          Only a null/empty check is performed (e.g., if ($val !== '')). This does not
+          prevent LESS injection. Flag for manual review.
+    remediation: >
+      Validate the color value with a strict hex regex at both save time and use time:
+        // In saveOption():
+        if ($name === 'baseColour' && !preg_match('/^#[0-9a-fA-F]{1,6}$/', $value)) {
+            $value = null;
+        }
+        // In init():
+        $baseColour = $this->getOption('baseColour');
+        if (!preg_match('/^#[0-9a-fA-F]{1,6}$/', $baseColour)) {
+            $baseColour = '#1E6292'; // fall back to default
+        }
+        $additionalLessVariables[] = '@bg-base:' . $baseColour . ';';
+    references:
+      - "https://github.com/pkp/pkp-lib/issues/11974"
+      - "http://karmainsecurity.com/KIS-2025-12"
+      - "https://seclists.org/fulldisclosure/2025/Dec/34"
+
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # OJS-SC-CVE-003 | CVE-2025-67889 | CWE-89 | HIGH
+  # SQL Injection (Boolean/Time-based) via searchPhrase in Institution Collector
+  # ─────────────────────────────────────────────────────────────────────────────
+  - id: "OJS-SC-CVE-003"
+    name: "CVE-2025-67889 — Raw Variable Interpolation in DB::raw() within Institution Collector"
+    description: >
+      The Institution Collector (classes/institution/Collector.php) processes the
+      'searchPhrase' GET parameter from the Institutions API endpoint
+      (.../api/v1/institutions). The input is split by whitespace using explode(),
+      and each token ($word) is escaped with addcslashes($word, '%_') to prevent
+      LIKE-wildcard injection. However, addcslashes() alone is insufficient because
+      $word is then interpolated directly into a DB::raw() call using PHP double-
+      quoted string interpolation ("lower('%{$word}%')"), bypassing Laravel's
+      parameterized query binding. This enables blind boolean-based or time-based
+      SQL injection by an authenticated Journal Editor or Production Editor who has
+      access to the Institutions API endpoint.
+    severity: "HIGH"
+    category: "source_code"
+    subcategory: "ojs_specific"
+    cwe: "CWE-89"
+    owasp: "A03:2021"
+    confidence: "HIGH"
+    ojs_versions_affected: "<= 3.4.0-9, <= 3.5.0-1"
+    cve_references:
+      - "CVE-2025-67889"
+    scan_scope:
+      file_paths:
+        - "classes/institution/Collector.php"
+      target_functions:
+        - "getQueryBuilder"
+    taint_analysis:
+      sources:
+        - "$this->searchPhrase"      # Mapped from GET 'searchPhrase' parameter
+        - "$word"                    # Token from explode(' ', $this->searchPhrase)
+      sinks:
+        - "DB::raw()"               # Executes raw SQL fragment without binding
+      sanitizers:
+        - "$pdo->quote('%{$word}%')"  # PDO-level quoting — canonical fix
+        - "(int) $var"               # Integer cast — sufficient for numeric-only fields
+      propagation_path: >
+        GET /api/v1/institutions?searchPhrase=...
+          → $this->searchPhrase
+          → explode(' ', $this->searchPhrase) → $words[]
+          → foreach $word = addcslashes($word, '%_')
+          → DB::raw("lower('%{$word}%')") — SQL injection via double-quote interpolation
+    pattern_match:
+      type: "ast_pattern"
+      patterns:
+        - description: "Variable interpolated inside DB::raw() using PHP encapsed string"
+          query: >
+            (scoped_call_expression
+              scope: (name) @scope (#eq? @scope "DB")
+              name: (name) @method (#eq? @method "raw")
+              arguments: (arguments
+                (argument
+                  (encapsed_string
+                    (variable_name)
+                  )
+                ) @sink
+              )
+            )
+        - description: "String concatenation with user variable as right operand in DB::raw"
+          query: >
+            (scoped_call_expression
+              scope: (name) @scope (#eq? @scope "DB")
+              name: (name) @method (#eq? @method "raw")
+              arguments: (arguments
+                (argument
+                  (binary_expression
+                    operator: "."
+                    right: [(variable_name) (member_call_expression) (scoped_call_expression)]
+                  )
+                ) @sink
+              )
+            )
+        - description: "String concatenation with user variable as left operand in DB::raw"
+          query: >
+            (scoped_call_expression
+              scope: (name) @scope (#eq? @scope "DB")
+              name: (name) @method (#eq? @method "raw")
+              arguments: (arguments
+                (argument
+                  (binary_expression
+                    operator: "."
+                    left: [(variable_name) (member_call_expression) (scoped_call_expression)]
+                  )
+                ) @sink
+              )
+            )
+    false_positive_conditions:
+      - id: "FP-003-A"
+        verdict: "SAFE — suppress alert"
+        condition: >
+          The variable inside DB::raw() is explicitly wrapped with $pdo->quote() before
+          being passed to DB::raw(), e.g., DB::raw("lower(" . $pdo->quote("%{$word}%") . ")").
+          This is the canonical patch applied in versions 3.4.0-10 and 3.5.0-2.
+      - id: "FP-003-B"
+        verdict: "SAFE — suppress alert"
+        condition: >
+          The variable inside DB::raw() is explicitly cast to integer prior to
+          interpolation (e.g., (int) $var), and the cast result is used in the
+          DB::raw() argument. Integer-cast values cannot carry SQL injection payloads.
+      - id: "FP-003-C"
+        verdict: "SAFE — suppress alert"
+        condition: >
+          The DB::raw() call uses only hardcoded, developer-controlled string literals
+          with no user-provided variable interpolation whatsoever (e.g., DB::raw('NOW()')).
+      - id: "FP-003-D"
+        verdict: "REVIEW NEEDED — do not suppress"
+        condition: >
+          addcslashes() or similar string-escaping is applied to the variable, but the
+          variable is still interpolated via PHP double-quote encapsed string inside
+          DB::raw(). addcslashes('%_') only escapes LIKE wildcards, not SQL meta-characters.
+    remediation: >
+      Replace direct variable interpolation inside DB::raw() with PDO-level quoting:
+        $pdo = DB::connection()->getPdo();
+        // Inside the where closure:
+        ->where(DB::raw('lower(col)'), 'LIKE', DB::raw('lower(' . $pdo->quote("%{$word}%") . ')'));
+      Alternatively, restructure to use Laravel's parameter binding which fully avoids
+      DB::raw() for user-controlled values:
+        ->where(DB::raw('lower(col)'), 'LIKE', DB::raw('lower(?)'), ["%{$word}%"]);
+    references:
+      - "https://github.com/pkp/pkp-lib/issues/11977"
+      - "http://karmainsecurity.com/KIS-2025-10"
+      - "https://karmainsecurity.com/pocs/CVE-2025-67889.php"
+      - "https://seclists.org/fulldisclosure/2025/Dec/32"
+
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # OJS-SC-CVE-004 | CVE-2025-67892 | CWE-352 | MEDIUM
+  # Login CSRF — Missing checkCSRF() in Validation::login()
+  # ─────────────────────────────────────────────────────────────────────────────
+  - id: "OJS-SC-CVE-004"
+    name: "CVE-2025-67892 — Login Handler Missing Anti-CSRF Token Validation"
+    description: >
+      The static Validation::login() method in classes/security/Validation.inc.php
+      (v3.3.0) or Validation.php (v3.4.0+) processes login POST requests without
+      validating the CSRF token at the entry point. This allows an attacker to trick
+      an authenticated OJS user into re-authenticating to an attacker-controlled
+      account via a cross-origin forged POST (login CSRF), which can enable account
+      fixation, privilege escalation, or unauthorized session hijacking depending on
+      the application's post-login behavior. The vulnerability affects the first
+      authentication check in the login method before any credential processing.
+    severity: "MEDIUM"
+    category: "source_code"
+    subcategory: "ojs_specific"
+    cwe: "CWE-352"
+    owasp: "A01:2021"
+    confidence: "MEDIUM"
+    ojs_versions_affected: "<= 3.3.0-21, <= 3.4.0-9, <= 3.5.0-1"
+    cve_references:
+      - "CVE-2025-67892"
+    scan_scope:
+      file_paths:
+        - "classes/security/Validation.inc.php"
+        - "classes/security/Validation.php"
+        - "lib/pkp/classes/security/Validation.php"
+        - "lib/pkp/classes/security/Validation.inc.php"
+      target_functions:
+        - "login"
+    pattern_match:
+      type: "ast_pattern"
+      patterns:
+        - description: "Static login() function body contains credential logic but no checkCSRF call"
+          query: >
+            (function_definition
+              name: (name) @fn (#eq? @fn "login")
+              body: (compound_statement) @body
+              (#not-match? @body "checkCSRF")
+            )
+        - description: "Regex — login method with password/authId processing but no checkCSRF"
+          type: "regex"
+          query: >
+            (?s)public\s+static\s+function\s+login\s*\(.*?\)\s*\{(?:(?!checkCSRF).)*?(?:verifyPassword|getAuthId|getPassword)
+    false_positive_conditions:
+      - id: "FP-004-A"
+        verdict: "SAFE — suppress alert"
+        condition: >
+          The method body contains a call to $request->checkCSRF() (or equivalent)
+          as one of the FIRST statements before any credential validation or session
+          manipulation logic. The call must be on the request object obtained via
+          Application::get()->getRequest() or equivalent OJS bootstrap method.
+      - id: "FP-004-B"
+        verdict: "SAFE — suppress alert"
+        condition: >
+          The login endpoint is protected by a framework-level global CSRF middleware
+          that intercepts ALL POST requests (not just selected routes) before
+          dispatching to the handler, making per-function checks redundant.
+      - id: "FP-004-C"
+        verdict: "SAFE — suppress alert"
+        condition: >
+          The authentication method exclusively uses stateless token-based
+          authentication (e.g., HTTP Bearer JWT) and does not rely on cookie-based
+          sessions, making it inherently immune to CSRF attacks.
+      - id: "FP-004-D"
+        verdict: "REVIEW NEEDED — do not suppress"
+        condition: >
+          A nonce/token is checked somewhere in the login flow but the check is after
+          credential verification, or the token check can be bypassed via parameter
+          omission (returning true when the parameter is absent).
+    remediation: >
+      Add $request->checkCSRF() as the first guard inside the login() method,
+      immediately after input retrieval and before any credential logic:
+        $request = Application::get()->getRequest();
+        if (!$request->checkCSRF()) {
+            return false; // Reject request — CSRF token invalid or missing
+        }
+      Ensure the CSRF token is included in the login form template as a hidden field
+      generated by the OJS form helper.
+    references:
+      - "https://github.com/pkp/pkp-lib/issues/11978"
+      - "http://karmainsecurity.com/KIS-2025-14"
+      - "https://seclists.org/fulldisclosure/2025/Dec/36"
+
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # OJS-SC-CVE-005 | CVE-2023-47271 | CWE-22 | CRITICAL
+  # RCE via Path Traversal — Unsanitized <cover_image> in NativeImportExportPlugin
+  # ─────────────────────────────────────────────────────────────────────────────
+  - id: "OJS-SC-CVE-005"
+    name: "CVE-2023-47271 — XML <cover_image> Tag Leads to Arbitrary File Write via file_put_contents"
+    description: >
+      The Native Import/Export Plugin's parsePublicationCover() function reads the
+      <cover_image> XML tag content ($n->textContent) and stores it as the upload
+      filename in $coverImage['uploadName'] without adequate sanitization. When
+      processing the corresponding <embed> tag, the plugin constructs a file path
+      by appending this unsanitized filename to the public context files directory and
+      writes the base64-decoded file content via file_put_contents(). An authenticated
+      Journal Editor or Production Editor can supply a crafted XML package with a
+      <cover_image> containing path traversal sequences, causing arbitrary file
+      creation or overwrite anywhere the web server user has write access.
+      If a PHP file is written to the web root, this results in full Remote Code
+      Execution (RCE). This is the most severe vulnerability in the existing ruleset.
+    severity: "CRITICAL"
+    category: "source_code"
+    subcategory: "ojs_specific"
+    cwe: "CWE-22"
+    owasp: "A01:2021"
+    confidence: "HIGH"
+    ojs_versions_affected: "<= 3.4.0-3, <= 3.3.0-15"
+    cve_references:
+      - "CVE-2023-47271"
+    scan_scope:
+      file_paths:
+        - "plugins/importexport/native/filter/PKPNativeFilterHelper.php"
+        - "plugins/importexport/native/filter/NativeXmlPublicationFilter.inc.php"
+        - "plugins/importexport/native/filter/NativeXmlPublicationFilter.php"
+      target_functions:
+        - "parsePublicationCover"
+    taint_analysis:
+      sources:
+        - "$n->textContent"          # DOMElement text content from <cover_image> XML tag
+        - "$coverImage['uploadName']" # Intermediate tainted variable
+      sinks:
+        - "file_put_contents()"      # Writes arbitrary content to the tainted path
+      sanitizers:
+        - "preg_replace('/[^a-z0-9\\.\\-]+/', '', ...)"
+        - "str_replace([' ', '_', ':'], '-', ...)"
+        - "strtolower(...)"
+        - "basename(...)"            # Combined with regex — see FP conditions
+        - "uniqid()"                 # Prefix generation, not standalone sanitization
+      propagation_path: >
+        XML <cover_image> tag
+          → $n->textContent
+          → $coverImage['uploadName'] = $n->textContent  (VULNERABLE)
+            OR $coverImage['uploadName'] = uniqid() . '-' . basename($n->textContent) (PARTIAL)
+          → $filePath = $contextFilesPath . '/' . $coverImage['uploadName']
+          → file_put_contents($filePath, base64_decode(...)) — arbitrary write
+    pattern_match:
+      type: "ast_pattern"
+      patterns:
+        - description: "textContent assigned to uploadName array key without sanitization"
+          query: >
+            (expression_statement
+              (assignment_expression
+                left: (subscript_expression
+                  object: (variable_name) @arr (#match? @arr "\\$coverImage")
+                  index: (string (string_value) @key (#eq? @key "uploadName"))
+                )
+                right: (member_access_expression
+                  name: (name) @prop (#eq? @prop "textContent")
+                )
+              )
+            )
+        - description: "file_put_contents with a path variable derived from coverImage"
+          query: >
+            (function_call_expression
+              function: (name) @fn (#eq? @fn "file_put_contents")
+              arguments: (arguments
+                (argument (variable_name) @path)
+                (argument
+                  (function_call_expression
+                    function: (name) @decode (#eq? @decode "base64_decode")
+                  )
+                )
+              )
+            )
+        - description: "Regex — both vulnerability patterns combined"
+          type: "regex"
+          query: >
+            \$coverImage\[['"]uploadName['"]\]\s*=\s*(?!.*preg_replace)(?:uniqid\(\)\s*\.\s*['"]-['"]\s*\.\s*basename\s*\()?.*\$n->textContent
+    false_positive_conditions:
+      - id: "FP-005-A"
+        verdict: "SAFE — suppress alert"
+        condition: >
+          The $coverImage['uploadName'] assignment applies the FULL canonical sanitization
+          chain: uniqid() prefix + basename() + preg_replace('/[^a-z0-9\\.\\-]+/', '') +
+          str_replace for space/colon/underscore + strtolower(). All five transformations
+          must be present in the assignment chain.
+      - id: "FP-005-B"
+        verdict: "REVIEW NEEDED — do not suppress"
+        condition: >
+          Only basename() is applied (without the regex allowlist) to $n->textContent
+          before assignment. This was an intermediate incomplete patch; path traversal
+          using null-byte or OS-specific sequences may still be possible. Continue
+          flagging until the full preg_replace chain is confirmed.
+      - id: "FP-005-C"
+        verdict: "REVIEW NEEDED — do not suppress"
+        condition: >
+          The filename is prefixed with uniqid() but $n->textContent is appended
+          after only basename() without regex. The resulting string still retains
+          the dangerous portion of the traversal path after the uniqid prefix.
+    remediation: >
+      Apply the full sanitization chain to the <cover_image> tag content before
+      storing as uploadName:
+        $coverImage['uploadName'] = uniqid() . '-' . basename(
+          preg_replace('/[^a-z0-9\\.\\-]+/', '',
+            str_replace([' ', '_', ':'], '-', strtolower($n->textContent))
+          )
+        );
+      Never use the raw $n->textContent as part of a file path. Additionally, consider
+      restricting allowed image extensions via a whitelist after sanitization.
+    references:
+      - "https://github.com/pkp/pkp-lib/issues/9464"
+      - "http://karmainsecurity.com/KIS-2023-14"
+      - "https://seclists.org/fulldisclosure/2023/Dec/23"
+
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # OJS-SC-CVE-006 | CVE-2023-5903 | CWE-79 | MEDIUM
+  # Stored XSS — Smarty {translate} name param without |escape in submissions.tpl
+  # ─────────────────────────────────────────────────────────────────────────────
+  - id: "OJS-SC-CVE-006"
+    name: "CVE-2023-5903 — Stored XSS via Section Title in Smarty {translate} Tag"
+    description: >
+      The submissions.tpl template passes the localized section title,
+      retrieved via $section->getLocalizedTitle(), directly as the 'name' parameter
+      to the Smarty {translate} tag without the |escape modifier. A privileged
+      user who can create or edit journal sections (e.g., Journal Manager) can inject
+      an XSS payload into the section title field. The payload is stored in the
+      database and executed in the victim's browser when the submissions page is
+      rendered, constituting a Stored XSS attack targeting lower-privilege users
+      who visit the page.
+    severity: "MEDIUM"
+    category: "source_code"
+    subcategory: "ojs_specific"
+    cwe: "CWE-79"
+    owasp: "A03:2021"
+    confidence: "HIGH"
+    ojs_versions_affected: "< 3.3.0-16"
+    cve_references:
+      - "CVE-2023-5903"
+    scan_scope:
+      file_paths:
+        - "templates/frontend/pages/submissions.tpl"
+        - "templates/frontend/**/*.tpl"
+      target_context: "Smarty template {translate} tag with dynamic name parameter"
+    pattern_match:
+      type: "regex"
+      patterns:
+        - description: "getLocalizedTitle() in {translate} name param without |escape"
+          query: >
+            name=\$section->getLocalizedTitle\(\)(?!\|escape|\|strip_unsafe_html|\|htmlspecialchars)
+        - description: "Any getter method used as a {translate} name param without escape"
+          query: >
+            \{translate\s[^}]*name=\$[a-zA-Z_]+->get[A-Z][a-zA-Z]+\(\)(?!\|escape|\|strip_unsafe_html)
+    false_positive_conditions:
+      - id: "FP-006-A"
+        verdict: "SAFE — suppress alert"
+        condition: >
+          The |escape modifier is chained to the variable in the template:
+          name=$section->getLocalizedTitle()|escape. This is the canonical patch.
+      - id: "FP-006-B"
+        verdict: "SAFE — suppress alert"
+        condition: >
+          The |strip_unsafe_html Smarty modifier is applied to the variable, which
+          performs HTML sanitization at the template layer before rendering.
+      - id: "FP-006-C"
+        verdict: "SAFE — suppress alert"
+        condition: >
+          The PHP controller layer explicitly calls htmlspecialchars() or a trusted
+          sanitization function on the value before assigning it to the Smarty
+          template variable, AND the template variable is tracked in the controller
+          context to confirm this escaping was applied to this specific variable.
+      - id: "FP-006-D"
+        verdict: "SAFE — suppress alert"
+        condition: >
+          The getter method returns a strictly numeric value (e.g., an integer ID
+          or a version string) that cannot contain HTML special characters.
+    remediation: >
+      Append the |escape Smarty modifier to the dynamic variable in the template:
+        {translate key="about.onlineSubmissions.submitToSection"
+                   name=$section->getLocalizedTitle()|escape
+                   url=$sectionSubmissionUrl}
+      This ensures HTML special characters are entity-encoded before browser rendering.
+    references:
+      - "https://github.com/pkp/pkp-lib/commit/8b26ee404af3b11803a40e904f985f0a0b215a5c"
+      - "https://huntr.com/bounties/5c147ff8-3cc4-4f21-9f1c-13fd50957dad"
+      - "https://nvd.nist.gov/vuln/detail/CVE-2023-5903"
+
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # OJS-SC-CVE-007 | CVE-2023-5626 | CWE-352 | HIGH
+  # CSRF — Missing FormValidatorCSRF in PaymentTypesForm Constructor
+  # ─────────────────────────────────────────────────────────────────────────────
+  - id: "OJS-SC-CVE-007"
+    name: "CVE-2023-5626 — Missing FormValidatorCSRF in PaymentTypesForm __construct()"
+    description: >
+      The PaymentTypesForm class (classes/subscription/form/PaymentTypesForm.inc.php)
+      handles configuration of payment types for journal subscriptions. Its constructor
+      initializes several form validators (e.g., FormValidatorCustom for fee amounts)
+      but omits the FormValidatorCSRF check. This allows an attacker to forge a POST
+      request to the payment types form handler endpoint on behalf of an authenticated
+      Journal Manager, potentially altering subscription pricing, payment methods,
+      or disabling payment requirements without the victim's knowledge, via CSRF attack.
+    severity: "HIGH"
+    category: "source_code"
+    subcategory: "ojs_specific"
+    cwe: "CWE-352"
+    owasp: "A01:2021"
+    confidence: "HIGH"
+    ojs_versions_affected: "< 3.3.0-16"
+    cve_references:
+      - "CVE-2023-5626"
+    scan_scope:
+      file_paths:
+        - "classes/subscription/form/PaymentTypesForm.inc.php"
+        - "classes/subscription/form/PaymentTypesForm.php"
+        - "lib/pkp/classes/**/*Form.inc.php"
+        - "lib/pkp/classes/**/*Form.php"
+      target_functions:
+        - "__construct"
+    pattern_match:
+      type: "ast_pattern"
+      patterns:
+        - description: "Form constructor contains state-changing string key but no FormValidatorCSRF"
+          query: >
+            (method_declaration
+              name: (name) @fn (#eq? @fn "__construct")
+              body: (compound_statement) @body
+              (#match? @body "payment|subscription|fee|manager")
+              (#not-match? @body "FormValidatorCSRF")
+            )
+        - description: "Regex — constructor initializing form checks without CSRF validator"
+          type: "regex"
+          query: >
+            (?s)public\s+function\s+__construct\s*\(\s*\)\s*\{(?:(?!FormValidatorCSRF).)*?manager\.payment\.form
+    false_positive_conditions:
+      - id: "FP-007-A"
+        verdict: "SAFE — suppress alert"
+        condition: >
+          The constructor (or a parent class __construct()) includes
+          $this->addCheck(new FormValidatorCSRF($this)). The check may be in a
+          parent class if the form extends a base class that already enforces CSRF.
+          Verify the full class hierarchy before suppressing.
+      - id: "FP-007-B"
+        verdict: "SAFE — suppress alert"
+        condition: >
+          The form is exclusively used for HTTP GET / read-only display and does not
+          perform any state-changing database operations when submitted. The presence
+          of only FilterData or DisplayData validators (no save/update logic) confirms
+          this.
+      - id: "FP-007-C"
+        verdict: "SAFE — suppress alert"
+        condition: >
+          CSRF protection is applied at a global middleware layer (e.g., Laravel's
+          VerifyCsrfToken middleware is active for all routes including this one),
+          making per-form checks redundant.
+      - id: "FP-007-D"
+        verdict: "REVIEW NEEDED — do not suppress"
+        condition: >
+          The parent class has a generic CSRF check but the child class overrides
+          __construct() without calling parent::__construct(), effectively removing
+          the inherited protection.
+    remediation: >
+      Add FormValidatorCSRF as the final check in the constructor:
+        public function __construct() {
+            // ... existing validators ...
+            $this->addCheck(new FormValidatorCSRF($this));
+        }
+      Ensure the check is also present in any subclasses that override __construct()
+      without calling parent::__construct().
+    references:
+      - "https://github.com/pkp/ojs/commit/99a9f393190383454aa5ddffedffc89596f6c682"
+      - "https://huntr.dev/bounties/c99279c1-709a-4e7b-a042-010c2bb44d6b"
+      - "https://nvd.nist.gov/vuln/detail/CVE-2023-5626"
+
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # OJS-SC-CVE-008 | CVE-2019-19909 | CWE-502 | HIGH
+  # PHP Object Injection via unserialize() on User-Controlled 'filters'/'orderBy'
+  # ─────────────────────────────────────────────────────────────────────────────
+  - id: "OJS-SC-CVE-008"
+    name: "CVE-2019-19909 — PHP Object Injection via unserialize() on Request Parameters"
+    description: >
+      The Report Generator handler (pages/management/PKPToolsHandler.inc.php) reads the
+      'filters' and 'orderBy' URL parameters via $request->getUserVar() and passes them
+      directly to PHP's native unserialize() function. PHP's unserialize() instantiates
+      arbitrary objects based on the serialized string payload and automatically invokes
+      magic methods (__wakeup, __destruct, __toString) during deserialization. An
+      authenticated Journal Manager who can access the Report Generator can craft a
+      malicious serialized object string using an existing PHP class in the application's
+      autoloader namespace (a "gadget chain") to achieve arbitrary code execution,
+      file deletion, or SSRF — all without uploading any file.
+    severity: "HIGH"
+    category: "source_code"
+    subcategory: "ojs_specific"
+    cwe: "CWE-502"
+    owasp: "A08:2021"
+    confidence: "HIGH"
+    ojs_versions_affected: "< 3.1.2-2"
+    cve_references:
+      - "CVE-2019-19909"
+    scan_scope:
+      file_paths:
+        - "pages/management/PKPToolsHandler.inc.php"
+        - "classes/statistics/PKPStatisticsHelper.inc.php"
+        - "lib/pkp/pages/management/PKPToolsHandler.inc.php"
+        - "lib/pkp/**/*.inc.php"
+        - "lib/pkp/**/*.php"
+      target_functions:
+        - "generateReport"
+        - "getReportUrl"
+    taint_analysis:
+      sources:
+        - "$request->getUserVar('filters')"   # URL GET parameter
+        - "$request->getUserVar('orderBy')"   # URL GET parameter
+        - "$request->getUserVar(...)"         # Generic getUserVar as source
+      sinks:
+        - "unserialize()"                     # PHP native — triggers magic methods
+      sanitizers:
+        - "json_decode()"                     # Safe alternative — only decodes JSON
+      propagation_path: >
+        URL GET parameter (?filters=...)
+          → $request->getUserVar('filters')
+          → [NO sanitization]
+          → unserialize($request->getUserVar('filters'))
+          → PHP object instantiation → magic methods (__wakeup/__destruct) → RCE
+    pattern_match:
+      type: "ast_pattern"
+      patterns:
+        - description: "unserialize() directly wrapping getUserVar() result"
+          query: >
+            (function_call_expression
+              function: (name) @fn (#eq? @fn "unserialize")
+              arguments: (arguments
+                (argument
+                  (member_call_expression
+                    name: (name) @method (#eq? @method "getUserVar")
+                  )
+                )
+              )
+            )
+        - description: "unserialize() on a variable that was assigned from getUserVar"
+          query: >
+            (function_call_expression
+              function: (name) @fn (#eq? @fn "unserialize")
+              arguments: (arguments
+                (argument (variable_name) @var)
+              )
+            )
+        - description: "Regex — unserialize on any request user variable"
+          type: "regex"
+          query: >
+            unserialize\s*\(\s*\$request->getUserVar\s*\(
+    false_positive_conditions:
+      - id: "FP-008-A"
+        verdict: "SAFE — suppress alert"
+        condition: >
+          The unserialize() call operates exclusively on data retrieved from the
+          database (not from any GET/POST/COOKIE/HTTP header source), the column
+          is populated only by the application itself (not writable by end users),
+          AND the column value is guaranteed to never contain user-controlled content
+          by design. Database-origin data that users can influence indirectly (e.g.,
+          stored user input) does NOT satisfy this condition.
+      - id: "FP-008-B"
+        verdict: "SAFE — suppress alert"
+        condition: >
+          A json_decode() call processes the request parameter instead of unserialize().
+          json_decode() does not instantiate PHP objects by default and is not vulnerable
+          to PHP object injection (unless JSON_OBJECT_AS_ARRAY is not set and the
+          second argument is false with class mappings — verify).
+      - id: "FP-008-C"
+        verdict: "REVIEW NEEDED — do not suppress"
+        condition: >
+          The variable passed to unserialize() was previously processed through any
+          string manipulation (e.g., base64_decode, urldecode) but originates from
+          a user-controlled source. These transformations do not prevent object
+          injection; they only obfuscate the payload.
+    remediation: >
+      Replace all serialize/unserialize pairs with json_encode/json_decode:
+        // VULNERABLE:
+        $filters = unserialize($request->getUserVar('filters'));
+        // SAFE:
+        $filters = json_decode($request->getUserVar('filters'), true);
+      Audit the entire codebase for any remaining unserialize() calls on data that
+      transits through user-controlled channels. Consider adding
+      unserialize(['allowed_classes' => false]) as a defense-in-depth measure
+      for legacy code where full replacement is not immediately feasible.
+    references:
+      - "https://github.com/pkp/pkp-lib/issues/5302"
+      - "https://github.com/pkp/pkp-lib/compare/3_1_2-1...3_1_2-2"
+      - "https://nvd.nist.gov/vuln/detail/CVE-2019-19909"
+
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # OJS-SC-CVE-009 | CVE-2025-13469 | CWE-79 | LOW
+  # Stored XSS — manualInstructions rendered with |nl2br only (no |strip_unsafe_html)
+  # ─────────────────────────────────────────────────────────────────────────────
+  - id: "OJS-SC-CVE-009"
+    name: "CVE-2025-13469 — Stored XSS via Manual Payment Instructions Missing strip_unsafe_html"
+    description: >
+      The Manual Payment Plugin's payment form template (paymentForm.tpl) renders the
+      'manualInstructions' setting using {$manualInstructions|nl2br}, which converts
+      newlines to <br> HTML tags but does NOT sanitize dangerous HTML or JavaScript.
+      A Journal Manager who configures manual payment instructions can store an XSS
+      payload in this field. The payload is persisted in the database and executed in
+      the victim's browser (typically an author completing payment) when the payment
+      form page is loaded, constituting a Stored XSS. The severity is rated Low due
+      to the high privilege requirement (Journal Manager) for the attacker, and the
+      need for victim interaction on the payment page.
+    severity: "LOW"
+    category: "source_code"
+    subcategory: "ojs_specific"
+    cwe: "CWE-79"
+    owasp: "A03:2021"
+    confidence: "HIGH"
+    ojs_versions_affected: "3.3.0-x, 3.4.0-x, 3.5.0-x (all unpatched branches)"
+    cve_references:
+      - "CVE-2025-13469"
+    scan_scope:
+      file_paths:
+        - "plugins/paymethod/manual/templates/paymentForm.tpl"
+        - "plugins/paymethod/**/templates/*.tpl"
+      target_context: "Smarty variable rendered with |nl2br but missing |strip_unsafe_html"
+    pattern_match:
+      type: "regex"
+      patterns:
+        - description: "manualInstructions rendered with nl2br only"
+          query: >
+            \{\$manualInstructions\|nl2br\}(?!\s*.*strip_unsafe_html)
+        - description: "Any Smarty variable rendered with nl2br but no HTML sanitization"
+          query: >
+            \{\$[a-zA-Z_]+\|nl2br\}(?!.*strip_unsafe_html|.*escape)
+    false_positive_conditions:
+      - id: "FP-009-A"
+        verdict: "SAFE — suppress alert"
+        condition: >
+          The |strip_unsafe_html modifier is prepended before |nl2br in the Smarty
+          pipeline: {$manualInstructions|strip_unsafe_html|nl2br}. The order matters —
+          strip_unsafe_html MUST come before nl2br in the modifier chain.
+      - id: "FP-009-B"
+        verdict: "SAFE — suppress alert"
+        condition: >
+          The |escape modifier is used instead of or alongside |strip_unsafe_html,
+          producing HTML-encoded output. Note: |escape converts all HTML characters
+          (including safe ones), while |strip_unsafe_html is preferred when
+          preserving safe HTML formatting is desired.
+      - id: "FP-009-C"
+        verdict: "SAFE — suppress alert"
+        condition: >
+          The PHP controller layer applies strip_tags() or htmlspecialchars() to the
+          'manualInstructions' value before assigning it to the Smarty object, AND
+          this sanitization is confirmed via code trace (not merely assumed).
+    remediation: >
+      Prepend the |strip_unsafe_html Smarty modifier before |nl2br in the template:
+        <p>{$manualInstructions|strip_unsafe_html|nl2br}</p>
+      The strip_unsafe_html modifier is the OJS/PKP preferred approach as it strips
+      dangerous HTML (script tags, event handlers) while preserving safe formatting.
+    references:
+      - "https://github.com/pkp/pkp-lib/issues/12022"
+      - "https://vuldb.com/?id.333042"
+
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # OJS-SC-CVE-010 | CVE-2023-5894 | CWE-79 | MEDIUM
+  # Stored XSS — getIssueIdentification() in __() translation without htmlspecialchars
+  # ─────────────────────────────────────────────────────────────────────────────
+  - id: "OJS-SC-CVE-010"
+    name: "CVE-2023-5894 — Stored XSS via Issue Title Passed to __() Without htmlspecialchars"
+    description: >
+      The Issue Grid handlers (IssueGridCellProvider.inc.php and IssueGridRow.inc.php)
+      call $issue->getIssueIdentification() and pass the result as a substitution
+      parameter inside the OJS translation helper function __('editor.issues.editIssue',
+      array('issueIdentification' => ...)). The translation function substitutes the
+      value into the locale string and the result is used as the label of the
+      "Edit Issue" Ajax modal link without HTML escaping. An authenticated Editor
+      who can create or modify issues can inject an XSS payload into the issue
+      identification fields (volume, number, year, or title). The payload is stored
+      and executed in the browser of other editors when they access the Issues management
+      grid, constituting a Stored XSS within the administrative interface.
+    severity: "MEDIUM"
+    category: "source_code"
+    subcategory: "ojs_specific"
+    cwe: "CWE-79"
+    owasp: "A03:2021"
+    confidence: "HIGH"
+    ojs_versions_affected: "< 3.3.0-16, 3.4.0-x < 3.4.0-4"
+    cve_references:
+      - "CVE-2023-5894"
+    scan_scope:
+      file_paths:
+        - "controllers/grid/issues/IssueGridCellProvider.inc.php"
+        - "controllers/grid/issues/IssueGridRow.inc.php"
+        - "controllers/grid/issues/IssueGridCellProvider.php"
+        - "controllers/grid/issues/IssueGridRow.php"
+      target_functions:
+        - "getCellActions"
+        - "initialize"
+    taint_analysis:
+      sources:
+        - "$issue->getIssueIdentification()"  # Returns user-input-derived composite string
+      sinks:
+        - "__()"                              # Translation function — output rendered as HTML
+      sanitizers:
+        - "htmlspecialchars()"               # HTML entity encoding — canonical fix
+      propagation_path: >
+        Issue title/volume/year (user-controlled fields)
+          → $issue->getIssueIdentification()
+          → array('issueIdentification' => $issue->getIssueIdentification())
+          → __('editor.issues.editIssue', [...])
+          → Output rendered in browser (Edit Issue modal label) — XSS executed
+    pattern_match:
+      type: "ast_pattern"
+      patterns:
+        - description: "getIssueIdentification() passed to __() without htmlspecialchars wrapping"
+          query: >
+            (function_call_expression
+              function: (name) @fn (#eq? @fn "__")
+              arguments: (arguments
+                (argument (string))
+                (argument
+                  (array_creation_expression
+                    (array_element_initializer
+                      key: (string (string_value) @key (#eq? @key "issueIdentification"))
+                      value: (member_call_expression
+                        name: (name) @method (#eq? @method "getIssueIdentification")
+                      )
+                    )
+                  )
+                )
+              )
+            )
+        - description: "Regex — getIssueIdentification in __ translation array without htmlspecialchars"
+          type: "regex"
+          query: >
+            __\s*\(\s*['"]editor\.issues\.editIssue['"]\s*,\s*(?:array\(|\[)\s*['"]issueIdentification['"]\s*=>\s*(?!htmlspecialchars)\$issue->getIssueIdentification\(\)
+    false_positive_conditions:
+      - id: "FP-010-A"
+        verdict: "SAFE — suppress alert"
+        condition: >
+          The getIssueIdentification() call is wrapped with htmlspecialchars() before
+          being placed in the translation array:
+          'issueIdentification' => htmlspecialchars($issue->getIssueIdentification())
+          This is the canonical patch applied in versions 3.3.0-16 and 3.4.0-4.
+      - id: "FP-010-B"
+        verdict: "SAFE — suppress alert"
+        condition: >
+          The translation result is passed into a context where it is further escaped
+          by a template engine (e.g., the output of __() is assigned to a Smarty
+          variable with |escape), AND this template-layer escaping covers all output
+          paths of the value.
+      - id: "FP-010-C"
+        verdict: "REVIEW NEEDED — do not suppress"
+        condition: >
+          A different sanitization function (e.g., strip_tags()) is applied but
+          htmlspecialchars() is absent. strip_tags() alone does not prevent attribute-
+          based XSS (e.g., injecting onerror= in an img tag that survives strip_tags).
+    remediation: >
+      Wrap getIssueIdentification() with htmlspecialchars() in the translation
+      parameter array:
+        __('editor.issues.editIssue', [
+            'issueIdentification' => htmlspecialchars($issue->getIssueIdentification())
+        ])
+      Apply this fix consistently in all Grid handlers (both CellProvider and Row).
+    references:
+      - "https://github.com/pkp/ojs/commit/66927de1a82e3a3004db9741d1505ddac0980e63"
+      - "https://huntr.com/bounties/aba3ba5b-aa6b-4076-b663-4237b4a0761d"
+      - "https://nvd.nist.gov/vuln/detail/CVE-2023-5894"
+
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # OJS-SC-CVE-011 | CVE-2018-12229 | CWE-79 | MEDIUM
+  # Reflected XSS — $authors in search.tpl HTML input value without |escape
+  # ─────────────────────────────────────────────────────────────────────────────
+  - id: "OJS-SC-CVE-011"
+    name: "CVE-2018-12229 — Reflected XSS via 'authors' Parameter in Search Template"
+    description: >
+      The frontend search template (templates/frontend/pages/search.tpl) reflects the
+      GET 'authors' parameter value directly into the value attribute of an HTML
+      <input> element using {$authors} without the Smarty |escape modifier. An
+      unauthenticated attacker can craft a URL where the 'authors' query parameter
+      contains HTML-breaking characters (e.g., "><script>alert(1)</script>) and trick
+      a user into clicking the link. The malicious script content is reflected in the
+      page response and executed immediately in the victim's browser, constituting a
+      Reflected XSS attack. This vulnerability requires no authentication and can be
+      weaponized via phishing links distributed by email or social media.
+    severity: "MEDIUM"
+    category: "source_code"
+    subcategory: "ojs_specific"
+    cwe: "CWE-79"
+    owasp: "A03:2021"
+    confidence: "HIGH"
+    ojs_versions_affected: "3.0.0 — 3.1.1-1"
+    cve_references:
+      - "CVE-2018-12229"
+    scan_scope:
+      file_paths:
+        - "templates/frontend/pages/search.tpl"
+        - "templates/frontend/**/*.tpl"
+      target_context: >
+        Smarty variables assigned to HTML element attribute values without |escape,
+        particularly in search-related templates
+    pattern_match:
+      type: "regex"
+      patterns:
+        - description: "$authors in value attribute without |escape"
+          query: >
+            value=\s*['"]\{\$authors\}['"](?!\|escape)
+        - description: "Any Smarty variable in value attribute without |escape"
+          query: >
+            value=\s*['"]\{\$[a-zA-Z_][a-zA-Z0-9_]*\}['"](?!.*\|escape)
+        - description: "Smarty variable in href/src/action/data attributes without |escape"
+          query: >
+            (?:href|src|action|data-[a-z]+)=\s*['"]\{\$[a-zA-Z_][a-zA-Z0-9_]*\}['"](?!\|escape)
+    false_positive_conditions:
+      - id: "FP-011-A"
+        verdict: "SAFE — suppress alert"
+        condition: >
+          The |escape modifier is appended to the Smarty variable:
+          value="{$authors|escape}". This HTML-encodes all special characters.
+      - id: "FP-011-B"
+        verdict: "SAFE — suppress alert"
+        condition: >
+          The PHP controller applies htmlspecialchars() or intval() to the value
+          before assigning it to Smarty, AND the template variable name can be
+          traced back to that specific controlled assignment (not a generic
+          $request->getUserVar() pass-through without sanitization).
+      - id: "FP-011-C"
+        verdict: "SAFE — suppress alert"
+        condition: >
+          The variable is guaranteed to be a strict integer (e.g., numeric page
+          count, year filter) and is cast via (int) or intval() before template
+          assignment. Integer values cannot contain HTML special characters.
+      - id: "FP-011-D"
+        verdict: "REVIEW NEEDED — do not suppress"
+        condition: >
+          The variable is passed through htmlentities() but within a context where
+          the output is assigned to a JavaScript event attribute (e.g., onclick=),
+          where HTML entity encoding alone is insufficient protection against
+          JavaScript injection.
+    remediation: >
+      Append the |escape modifier to all Smarty variables used in HTML attribute
+      value contexts in search templates:
+        <input type="text" name="authors" value="{$authors|escape}">
+      Apply this pattern consistently across all search form fields that reflect
+      user-supplied GET parameters.
+    references:
+      - "https://github.com/pkp/pkp-lib/issues/3785"
+      - "https://metamorfosec.com/Files/Advisories/METS-2018-001-A_XSS_Vulnerability_in_OJS_3.0.0_to_3.1.1-1.txt"
+      - "https://nvd.nist.gov/vuln/detail/CVE-2018-12229"
+
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # OJS-SC-CVE-012 | CVE-2022-26616 | CWE-644 | HIGH
+  # Host Header Injection — Unvalidated HTTP_HOST / HTTP_X_FORWARDED_HOST
+  # ─────────────────────────────────────────────────────────────────────────────
+  - id: "OJS-SC-CVE-012"
+    name: "CVE-2022-26616 — Host Header Injection via Unvalidated $_SERVER HTTP_HOST"
+    description: >
+      The PKPRequest class (classes/core/PKPRequest.inc.php) resolves the server host
+      name from HTTP request headers in priority order: HTTP_X_FORWARDED_HOST,
+      HTTP_HOST, then SERVER_NAME. This resolved host value is used to construct
+      absolute URLs throughout the application (e.g., in password reset email links,
+      API base URLs, and HTML output). Because the resolved host is not validated
+      against a trusted whitelist before use, an attacker who can control or spoof
+      these HTTP headers (e.g., via a man-in-the-middle position or by exploiting
+      HTTP/1.1 header injection in a proxy chain) can inject an arbitrary host value.
+      This enables multiple attacks: Web Cache Poisoning (poisoning cached responses
+      with malicious URLs), Password Reset Poisoning (directing reset links to an
+      attacker-controlled domain), and Reflected XSS (if the host is reflected
+      directly in HTML output). This vulnerability also overlaps with CVE-2022-24181
+      which describes the XSS vector specifically.
+    severity: "HIGH"
+    category: "source_code"
+    subcategory: "ojs_specific"
+    cwe: "CWE-644"
+    owasp: "A05:2021"
+    confidence: "MEDIUM"
+    ojs_versions_affected: "<= 3.3.0-8, <= 3.2.1-3"
+    cve_references:
+      - "CVE-2022-26616"
+      - "CVE-2022-24181"
+    scan_scope:
+      file_paths:
+        - "classes/core/PKPRequest.inc.php"
+        - "classes/core/PKPRequest.php"
+        - "lib/pkp/classes/core/PKPRequest.inc.php"
+      target_functions:
+        - "getServerHost"
+        - "_getServerHost"
+    pattern_match:
+      type: "regex"
+      patterns:
+        - description: "HTTP_HOST read without in_array allowlist validation"
+          query: >
+            \$_SERVER\s*\[\s*['"]HTTP_HOST['"]\s*\](?![\s\S]{0,200}in_array)
+        - description: "HTTP_X_FORWARDED_HOST read without in_array allowlist validation"
+          query: >
+            \$_SERVER\s*\[\s*['"]HTTP_X_FORWARDED_HOST['"]\s*\](?![\s\S]{0,200}in_array)
+        - description: "Combined pattern — any unguarded HTTP host header access"
+          query: >
+            \$_SERVER\s*\[\s*['"]HTTP_(?:X_FORWARDED_)?HOST['"]\s*\]\s*(?![\s\S]{0,300}(?:in_array|allowed_hosts|strtolower\s*\(.*\$.*\)|json_decode))
+    false_positive_conditions:
+      - id: "FP-012-A"
+        verdict: "SAFE — suppress alert"
+        condition: >
+          The retrieved host value is explicitly validated using in_array() against
+          a list of allowed hosts loaded from the application configuration
+          (e.g., Config::getVar('general', 'allowed_hosts') with json_decode).
+          This is the canonical patch introduced in OJS 3.3.0-9. Both HTTP_HOST
+          and HTTP_X_FORWARDED_HOST must be validated (not just one of them).
+      - id: "FP-012-B"
+        verdict: "SAFE — suppress alert"
+        condition: >
+          The server is configured with a reverse proxy that strips and re-injects
+          the Host and X-Forwarded-Host headers from a trusted source, AND the
+          PHP code reads only $_SERVER['SERVER_NAME'] (which is set by the web
+          server itself, not the client). PHP configuration must confirm
+          SERVER_NAME is not user-influenced in this deployment.
+      - id: "FP-012-C"
+        verdict: "REVIEW NEEDED — do not suppress"
+        condition: >
+          strtolower() or strtok() is applied to the host value but no whitelist
+          validation follows. Normalization alone does not prevent injection of
+          a legitimate-appearing but attacker-controlled domain.
+    remediation: >
+      Implement allowed_hosts whitelist validation immediately after host header
+      resolution:
+        $serverHost = isset($_SERVER['HTTP_X_FORWARDED_HOST'])
+            ? $_SERVER['HTTP_X_FORWARDED_HOST']
+            : (isset($_SERVER['HTTP_HOST'])
+                ? $_SERVER['HTTP_HOST']
+                : $_SERVER['SERVER_NAME'] ?? $default);
+        $serverHost = strtok($serverHost, ','); // take first entry for multi-proxy
+        if (($allowedHosts = Config::getVar('general', 'allowed_hosts')) !== '') {
+            $allowedHosts = array_map('strtolower', json_decode($allowedHosts));
+            $serverHost = in_array(strtolower($serverHost), $allowedHosts)
+                ? $serverHost
+                : $default;
+        }
+        $this->_serverHost = $serverHost;
+      Also configure the allowed_hosts array in config.inc.php for all deployments.
+    references:
+      - "https://github.com/pkp/pkp-lib/issues/7649"
+      - "https://forum.pkp.sfu.ca/t/ojs-omp-ops-3-3-0-9-released/72236"
+      - "https://nvd.nist.gov/vuln/detail/CVE-2022-26616"
+      - "https://nvd.nist.gov/vuln/detail/CVE-2022-24181"

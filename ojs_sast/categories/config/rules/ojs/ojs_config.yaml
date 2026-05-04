@@ -1,0 +1,2200 @@
+rules:
+  # ==============================================================================
+  # OJS CONFIGURATION SAST — config.inc.php SECURITY RULESET (v1.0)
+  # ==============================================================================
+  # Coverage   : 30 misconfiguration checks across 8 config sections
+  # Scope      : OJS config.inc.php (INI-style configuration file)
+  # Language   : English
+  # Pattern    : Regex (INI/PHP-comment-style key=value pairs)
+  # Author     : OJS Config SAST Research — Extended from PKP Security Advisories
+  # Framework  : OJS-aware (config.inc.php sections: general, security, database,
+  #              debug, email, captcha, files, search, queues, schedule)
+  # Target     : Production OJS deployments — config.inc.php file
+  # ==============================================================================
+  #
+  # RULE ID CONVENTION:
+  #   OJS-CF-[NNN] — OJS Configuration Finding, sequential number
+  #
+  # SEVERITY LEVELS:
+  #   CRITICAL — Direct exploitation path, no auth required or trivially bypassed
+  #   HIGH     — Significant security impact, exploitable under common conditions
+  #   MEDIUM   — Moderate risk, increases attack surface or degrades security posture
+  #   LOW      — Minor risk, defense-in-depth degradation or informational leakage
+  #
+  # PATTERN NOTES:
+  #   All regex patterns are matched against individual lines of config.inc.php.
+  #   Lines beginning with ';' are comments and are excluded from matching.
+  #   Matching is performed case-insensitively on the value side of key=value pairs.
+  #   Flags for the regex engine: MULTILINE, CASE-INSENSITIVE on value tokens.
+  # ==============================================================================
+
+
+  # ════════════════════════════════════════════════════════════════════════════════
+  # SECTION: [general]
+  # ════════════════════════════════════════════════════════════════════════════════
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # OJS-CF-001 | CWE-321 | CRITICAL
+  # Empty or Missing app_key — Cookie Encryption Broken
+  # ─────────────────────────────────────────────────────────────────────────────
+  - id: "OJS-CF-001"
+    name: "Empty or Missing app_key — Application Encryption Key Not Set"
+    description: >
+      The 'app_key' directive in the [general] section provides the master
+      encryption key used by OJS for cookie encryption (when cookie_encryption
+      is enabled) and any other symmetric encryption operations. If app_key is
+      left empty (app_key =) or not set at all, the encryption subsystem either
+      falls back to an insecure default or fails silently. An attacker who can
+      observe or intercept session cookies may be able to forge or tamper with
+      encrypted session data if no key protects the cipher. This is especially
+      critical when [security] cookie_encryption = On is configured, because the
+      empty key renders the encryption trivially breakable. The app_key must be
+      a cryptographically random string of at least 32 characters, typically
+      generated using the OJS key:generate Artisan command.
+    severity: "CRITICAL"
+    category: "configuration"
+    subcategory: "cryptography"
+    cwe: "CWE-321"
+    owasp: "A02:2021"
+    confidence: "HIGH"
+    config_section: "[general]"
+    config_key: "app_key"
+    related_cve: []
+    pattern_match:
+      type: "regex"
+      patterns:
+        - id: "P-CF-001-A"
+          description: "app_key is explicitly set to empty string"
+          query: >
+            ^\s*app_key\s*=\s*$
+        - id: "P-CF-001-B"
+          description: "app_key contains only whitespace or empty quotes"
+          query: >
+            ^\s*app_key\s*=\s*['"]{1,2}\s*['"]{0,2}\s*$
+        - id: "P-CF-001-C"
+          description: "app_key directive is entirely absent from config (absence-check)"
+          query: >
+            ^(?![\s\S]*^\s*app_key\s*=\s*\S)[\s\S]*$
+          note: "Absence detection — run as full-file check, not line-by-line"
+    insecure_example: |
+      [general]
+      app_key =
+    secure_example: |
+      [general]
+      app_key = "base64:AbCdEfGhIjKlMnOpQrStUvWxYz0123456789ABCDEF="
+    false_positive_conditions:
+      - id: "FP-CF-001-A"
+        verdict: "SAFE — suppress alert"
+        condition: >
+          The app_key is set to a non-empty, cryptographically random string
+          with the 'base64:' prefix, as produced by the 'php
+          lib/pkp/tools/buildpkg.php' or the artisan key:generate command.
+          Values of the form 'base64:...' with at least 32 base64 characters
+          after the prefix are considered safe.
+      - id: "FP-CF-001-B"
+        verdict: "REVIEW NEEDED — do not suppress"
+        condition: >
+          The app_key is set to a non-empty, human-readable string (not base64).
+          While technically not empty, short or predictable keys (e.g.,
+          'mysecret' or 'changeme') are inadequate. Flag for manual entropy
+          assessment.
+    remediation: >
+      Generate a cryptographically strong application key using:
+        php lib/pkp/tools/buildpkg.php
+      Or generate one manually (base64-encoded 32-byte random value):
+        php -r "echo 'base64:' . base64_encode(random_bytes(32)) . PHP_EOL;"
+      Then set it in config.inc.php:
+        app_key = "base64:<your_generated_key>"
+      Rotate the key immediately if it was previously empty in a production
+      environment and audit for any sessions or encrypted data that may have
+      been compromised.
+    references:
+      - "https://docs.pkp.sfu.ca/admin-guide/en/deploy-encryption"
+      - "https://github.com/pkp/pkp-lib/blob/main/classes/core/PKPEncryption.php"
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # OJS-CF-002 | CWE-521 / CWE-330 | CRITICAL
+  # Empty or Default allowed_hosts — Host Header Injection (CVE-2022-26616)
+  # ─────────────────────────────────────────────────────────────────────────────
+  - id: "OJS-CF-002"
+    name: "Empty allowed_hosts — All Incoming Host Headers Trusted (CVE-2022-26616)"
+    description: >
+      The 'allowed_hosts' directive in [general] specifies a JSON array of
+      trusted hostnames for the OJS installation. When this value is empty
+      (allowed_hosts = ''), OJS trusts ALL values presented in the HTTP Host and
+      X-Forwarded-Host headers without validation. This is the exact
+      configuration vulnerability exploited by CVE-2022-26616 and
+      CVE-2022-24181: an attacker can inject an arbitrary hostname into the Host
+      header, causing OJS to generate absolute URLs pointing to
+      attacker-controlled domains. This enables Password Reset Poisoning (where
+      reset links in emails lead to the attacker's server, leaking the token),
+      Web Cache Poisoning (if a caching proxy stores the poisoned response), and
+      Reflected XSS (if the host value is embedded directly into HTML output).
+      An empty allowed_hosts is explicitly documented as NOT RECOMMENDED in the
+      OJS config template comments.
+    severity: "CRITICAL"
+    category: "configuration"
+    subcategory: "input_validation"
+    cwe: "CWE-20"
+    owasp: "A05:2021"
+    confidence: "HIGH"
+    config_section: "[general]"
+    config_key: "allowed_hosts"
+    related_cve:
+      - "CVE-2022-26616"
+      - "CVE-2022-24181"
+    pattern_match:
+      type: "regex"
+      patterns:
+        - id: "P-CF-002-A"
+          description: "allowed_hosts set to empty string (all hosts trusted)"
+          query: >
+            ^\s*allowed_hosts\s*=\s*['"]{0,2}\s*['"]{0,2}\s*$
+        - id: "P-CF-002-B"
+          description: "allowed_hosts set to empty JSON array '[]' (effectively permits
+            all)"
+          query: >
+            ^\s*allowed_hosts\s*=\s*['"]\s*\[\s*\]\s*['"]\s*$
+    insecure_example: |
+      [general]
+      allowed_hosts = ''
+    secure_example: |
+      [general]
+      allowed_hosts = '["myjournal.example.org", "www.myjournal.example.org"]'
+    false_positive_conditions:
+      - id: "FP-CF-002-A"
+        verdict: "SAFE — suppress alert"
+        condition: >
+          The allowed_hosts contains a non-empty JSON-encoded array with at
+          least one valid hostname entry. Example:
+            allowed_hosts = '["myjournal.tld", "anotherjournal.tld"]'
+          The presence of any valid hostname in the list means host header
+          validation is active. The list should include ALL hostnames used to
+          access the OJS instance (including www. and non-www. variants, and any
+          alias domains).
+      - id: "FP-CF-002-B"
+        verdict: "CONTEXT REQUIRED — flag for review"
+        condition: >
+          The deployment is exclusively on a private/internal network with no
+          public-facing access and no email password-reset functionality
+          enabled. Risk is reduced but not eliminated. Recommend setting
+          allowed_hosts even in internal deployments as defense-in-depth.
+    remediation: >
+      Set the allowed_hosts to a JSON array containing all valid hostnames for
+      your OJS deployment. Include every hostname through which users may access
+      the system (primary domain, any aliases, www and non-www):
+        allowed_hosts = '["myjournal.example.org", "www.myjournal.example.org"]'
+      After setting this value, test all access routes to ensure legitimate
+      traffic is not rejected. The PKPRequest::getServerHost() method performs
+      case-insensitive matching against this list.
+    references:
+      - "https://github.com/pkp/pkp-lib/issues/7649"
+      - "https://forum.pkp.sfu.ca/t/ojs-omp-ops-3-3-0-9-released/72236"
+      - "https://nvd.nist.gov/vuln/detail/CVE-2022-26616"
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # OJS-CF-003 | CWE-330 | MEDIUM
+  # allow_url_fopen Enabled — SSRF / Remote File Inclusion Risk
+  # ─────────────────────────────────────────────────────────────────────────────
+  - id: "OJS-CF-003"
+    name: "allow_url_fopen Enabled — Remote URL Access via fopen() Permitted"
+    description: >
+      When 'allow_url_fopen = On' is set in the [general] section, OJS will use
+      PHP's fopen() and related functions to read from remote URLs directly.
+      While OJS uses this for certain OAI and inter-system integrations,
+      enabling it broadens the SSRF (Server-Side Request Forgery) attack
+      surface. If any OJS code path accepts a user-controlled URL and passes it
+      to a function that internally uses fopen(), an attacker can force the OJS
+      server to make outbound HTTP requests to arbitrary targets — including
+      internal network services (e.g., AWS metadata endpoint at 169.254.169.254,
+      internal APIs, or other backend services not otherwise exposed). The OJS
+      template comment explicitly notes this is disabled by default and modern
+      integrations do not require it. If PHP's configuration already disables
+      allow_url_fopen at the php.ini level, this OJS setting is ignored;
+      however, enabling it in config acts as an application-level override
+      intent signal.
+    severity: "MEDIUM"
+    category: "configuration"
+    subcategory: "network_access"
+    cwe: "CWE-918"
+    owasp: "A10:2021"
+    confidence: "HIGH"
+    config_section: "[general]"
+    config_key: "allow_url_fopen"
+    related_cve: []
+    pattern_match:
+      type: "regex"
+      patterns:
+        - id: "P-CF-003-A"
+          description: "allow_url_fopen explicitly set to On"
+          query: >
+            ^\s*allow_url_fopen\s*=\s*[Oo][Nn]\s*$
+    insecure_example: |
+      [general]
+      allow_url_fopen = On
+    secure_example: |
+      [general]
+      allow_url_fopen = Off
+    false_positive_conditions:
+      - id: "FP-CF-003-A"
+        verdict: "REVIEW NEEDED — low-risk if egress is controlled"
+        condition: >
+          The deployment uses allow_url_fopen = On intentionally for a specific
+          integration (e.g., DSpace OAI harvest). Risk is acceptable only if:
+          (1) Outbound network egress is restricted by a firewall to known
+          trusted hosts, AND (2) No user-controlled URL values flow into fopen()
+          or file_get_contents() calls in the codebase. Both conditions must be
+          independently verified. Flag for architectural review.
+    remediation: >
+      Set allow_url_fopen = Off in config.inc.php:
+        allow_url_fopen = Off
+      If specific remote URL access is needed for OAI or DOI resolution, use
+      PHP's cURL extension with explicit URL allowlisting at the code level
+      rather than enabling blanket fopen() URL support. Verify that PHP's global
+      php.ini also has allow_url_fopen = Off for defense-in-depth.
+    references:
+      - "https://www.php.net/manual/en/filesystem.configuration.php#ini.allow-u\
+        rl-fopen"
+      - "https://owasp.org/www-community/attacks/Server_Side_Request_Forgery"
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # OJS-CF-004 | CWE-16 | MEDIUM
+  # trust_x_forwarded_for = On Without Documented Reverse Proxy — IP Spoofing
+  # ─────────────────────────────────────────────────────────────────────────────
+  - id: "OJS-CF-004"
+    name: "trust_x_forwarded_for Enabled — Client IP May Be Spoofed"
+    description: >
+      When 'trust_x_forwarded_for = On', OJS uses the X-Forwarded-For HTTP
+      header value as the canonical client IP address, overriding REMOTE_ADDR.
+      This is appropriate ONLY when OJS sits behind a trusted reverse proxy
+      (e.g., nginx, Apache, HAProxy) that controls and rewrites this header. If
+      OJS is directly internet-accessible (no reverse proxy in front), any
+      client can supply an arbitrary X-Forwarded-For value, causing OJS to
+      record a spoofed IP address for all audit log entries, rate-limiting
+      decisions, session_check_ip enforcement, and IP-based access control. This
+      can also bypass IP-based subscription enforcement (a core OJS feature)
+      because the spoofed IP can be made to appear as a subscriber IP address.
+      The OJS template comments warn this defaults to On for backwards
+      compatibility when unset, making its explicit presence in config with On
+      value significant.
+    severity: "MEDIUM"
+    category: "configuration"
+    subcategory: "network_trust"
+    cwe: "CWE-807"
+    owasp: "A05:2021"
+    confidence: "MEDIUM"
+    config_section: "[general]"
+    config_key: "trust_x_forwarded_for"
+    related_cve: []
+    pattern_match:
+      type: "regex"
+      patterns:
+        - id: "P-CF-004-A"
+          description: "trust_x_forwarded_for set to On"
+          query: >
+            ^\s*trust_x_forwarded_for\s*=\s*[Oo][Nn]\s*$
+    insecure_example: |
+      [general]
+      trust_x_forwarded_for = On
+    secure_example: |
+      ; Set to On ONLY if OJS is behind a trusted reverse proxy that controls X-Forwarded-For
+      [general]
+      trust_x_forwarded_for = Off
+    false_positive_conditions:
+      - id: "FP-CF-004-A"
+        verdict: "SAFE — suppress alert if reverse proxy is confirmed"
+        condition: >
+          The deployment has a verified reverse proxy (nginx/Apache/HAProxy/AWS
+          ALB) in front of OJS that: (1) strips any client-supplied
+          X-Forwarded-For header, (2) injects only the verified client IP into
+          X-Forwarded-For, and (3) the OJS server is network-isolated and not
+          directly internet-accessible. All three conditions must be
+          architecturally verified and documented.
+    remediation: >
+      If OJS is directly internet-accessible without a reverse proxy:
+        trust_x_forwarded_for = Off
+      If OJS is behind a reverse proxy, verify the proxy correctly manages
+      X-Forwarded-For injection and set accordingly. Document the trust boundary
+      in the deployment's security runbook. Consider using REMOTE_ADDR only
+      (trust_x_forwarded_for = Off) and configuring IP logging at the proxy
+      layer instead.
+    references:
+      - "https://docs.pkp.sfu.ca/admin-guide/en/deploy-production"
+      - "https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/X-Forwarded-\
+        For"
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # OJS-CF-005 | CWE-16 | LOW
+  # session_samesite = None — CSRF via Cross-Site Cookie Transmission
+  # ─────────────────────────────────────────────────────────────────────────────
+  - id: "OJS-CF-005"
+    name: "session_samesite = None — Session Cookie Transmitted Cross-Site (CSRF
+      Risk)"
+    description: >
+      The 'session_samesite' directive controls the SameSite attribute of the
+      OJS session cookie (OJSSID). When set to 'None', the browser will include
+      the session cookie in ALL cross-site requests, including those initiated
+      by third-party pages. This significantly weakens CSRF protection: even if
+      OJS implements CSRF token validation in code, setting SameSite=None
+      removes the browser-level defense that prevents the session cookie from
+      being sent on cross-origin requests. An attacker hosting a malicious page
+      can trigger state-changing OJS requests (form submissions, API calls)
+      using the victim's authenticated session. Note: SameSite=None requires the
+      Secure flag to be simultaneously set; if force_ssl = Off and SameSite=None
+      is configured, the cookie will be treated as SameSite=Lax by modern
+      browsers, but the intent is still insecure and should be remediated. Valid
+      values are Strict, Lax, None.
+    severity: "MEDIUM"
+    category: "configuration"
+    subcategory: "session_security"
+    cwe: "CWE-352"
+    owasp: "A01:2021"
+    confidence: "HIGH"
+    config_section: "[general]"
+    config_key: "session_samesite"
+    related_cve:
+      - "CVE-2025-67892"
+    pattern_match:
+      type: "regex"
+      patterns:
+        - id: "P-CF-005-A"
+          description: "session_samesite set to None"
+          query: >
+            ^\s*session_samesite\s*=\s*[Nn]one\s*$
+    insecure_example: |
+      [general]
+      session_samesite = None
+    secure_example: |
+      [general]
+      session_samesite = Strict
+      ; Or: session_samesite = Lax (if cross-site navigation to OJS is needed)
+    false_positive_conditions:
+      - id: "FP-CF-005-A"
+        verdict: "CONTEXT REQUIRED — may be intentional for federated login"
+        condition: >
+          The deployment uses a Shibboleth or OAuth SSO flow that requires the
+          session cookie to be sent on cross-origin POST-redirect sequences.
+          SameSite=Lax is preferred over None in these cases as it still permits
+          top-level navigation cross-site. Review the SSO integration
+          requirements.
+    remediation: >
+      Change session_samesite to Strict or Lax:
+        session_samesite = Strict
+      Use 'Strict' for maximum protection (session cookie not sent on any
+      cross-site request, including top-level navigation from external links).
+      Use 'Lax' if OJS needs to accept top-level navigation from external links
+      (e.g., email links that carry session state). Never use 'None' in
+      production unless specifically required by a federated authentication
+      integration, and only when force_ssl = On is also configured.
+    references:
+      - "https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Set-Cookie/S\
+        ameSite"
+      - "https://owasp.org/www-community/attacks/csrf"
+
+  # ════════════════════════════════════════════════════════════════════════════════
+  # SECTION: [security]
+  # ════════════════════════════════════════════════════════════════════════════════
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # OJS-CF-006 | CWE-319 | HIGH
+  # force_ssl Disabled — Credentials and Session Tokens in Plaintext
+  # ─────────────────────────────────────────────────────────────────────────────
+  - id: "OJS-CF-006"
+    name: "force_ssl = Off — HTTPS Not Enforced Site-Wide (Plaintext Credential
+      Exposure)"
+    description: >
+      The 'force_ssl' directive in [security] controls whether OJS enforces
+      HTTPS for all connections and sets the 'Secure' flag on session cookies.
+      When set to Off, OJS serves its content over both HTTP and HTTPS, and the
+      session cookie (OJSSID) is transmitted WITHOUT the Secure flag. This
+      means: (1) Any HTTP request to OJS will include the session cookie in
+      plaintext, allowing a network-positioned attacker (e.g., on the same Wi-Fi
+      network, an ISP, or a man-in-the-middle) to intercept and steal
+      authenticated session tokens. (2) All submitted data (login credentials,
+      manuscript content, reviewer comments) is transmitted in plaintext over
+      HTTP connections. (3) The SSL_REDIRECT mechanism is disabled, so OJS will
+      not automatically redirect HTTP requests to HTTPS. In 2024+, TLS is a
+      baseline security requirement for any web application handling user
+      credentials. There is no acceptable justification for running OJS in
+      production without force_ssl = On.
+    severity: "HIGH"
+    category: "configuration"
+    subcategory: "transport_security"
+    cwe: "CWE-319"
+    owasp: "A02:2021"
+    confidence: "HIGH"
+    config_section: "[security]"
+    config_key: "force_ssl"
+    related_cve: []
+    pattern_match:
+      type: "regex"
+      patterns:
+        - id: "P-CF-006-A"
+          description: "force_ssl explicitly set to Off"
+          query: >
+            ^\s*force_ssl\s*=\s*[Oo][Ff][Ff]\s*$
+    insecure_example: |
+      [security]
+      force_ssl = Off
+    secure_example: |
+      [security]
+      force_ssl = On
+    false_positive_conditions:
+      - id: "FP-CF-006-A"
+        verdict: "CONTEXT REQUIRED — acceptable only in isolated development"
+        condition: >
+          The OJS instance is a non-production (local development / test)
+          environment with no real user data, accessible only on localhost or a
+          private internal network with no external access. Even in this case,
+          using a self-signed TLS certificate with force_ssl = On is strongly
+          recommended to prevent development habits from carrying into
+          production.
+      - id: "FP-CF-006-B"
+        verdict: "REVIEW NEEDED — TLS may be terminated at proxy"
+        condition: >
+          TLS is terminated at a reverse proxy (e.g., nginx with SSL
+          passthrough) and OJS communicates with the proxy over HTTP on
+          localhost. In this case, force_ssl may be Off intentionally, but the
+          config must ensure the proxy-to-OJS link is on a loopback/unix socket
+          only, AND the proxy enforces HTTPS for all external connections. Flag
+          for architectural review.
+    remediation: >
+      Enable force_ssl and obtain a valid TLS certificate (e.g., Let's Encrypt):
+        [security]
+        force_ssl = On
+      Ensure your web server (Apache/nginx) has a valid SSL/TLS certificate
+      configured and all HTTP traffic is redirected to HTTPS at the web-server
+      level as well as within OJS. Use Mozilla SSL Configuration Generator to
+      configure TLS 1.2+ with strong cipher suites.
+    references:
+      - "https://docs.pkp.sfu.ca/admin-guide/en/deploy-production"
+      - "https://letsencrypt.org/"
+      - "https://ssl-config.mozilla.org/"
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # OJS-CF-007 | CWE-916 | HIGH
+  # Weak Password Hashing Algorithm (md5 or sha1)
+  # ─────────────────────────────────────────────────────────────────────────────
+  - id: "OJS-CF-007"
+    name: "Weak Password Hash Algorithm — MD5 or SHA-1 Configured for User Passwords"
+    description: >
+      The 'encryption' directive in [security] specifies the hashing algorithm
+      used for OJS user passwords. The values 'md5' and 'sha1' are both
+      cryptographically broken for password hashing purposes. MD5 and SHA-1 are
+      general-purpose hash functions designed for speed, not password storage:
+      (1) They lack computational cost parameters (work factors), making brute
+      force and dictionary attacks against stolen password hashes extremely fast
+      on modern GPUs (billions of attempts per second for MD5). (2) No built-in
+      salting protection for individual passwords — collisions increase
+      exposure. (3) Large precomputed rainbow tables exist for both. The OJS
+      template itself marks this setting as 'deprecated' but retains it for
+      backwards compatibility during migration. Any production instance that has
+      completed user migration should eliminate md5/sha1 immediately. Modern OJS
+      versions (3.3+) use PHP's password_hash() with bcrypt by default for new
+      passwords; this config value controls how LEGACY password hashes are
+      verified.
+    severity: "HIGH"
+    category: "configuration"
+    subcategory: "cryptography"
+    cwe: "CWE-916"
+    owasp: "A02:2021"
+    confidence: "HIGH"
+    config_section: "[security]"
+    config_key: "encryption"
+    related_cve: []
+    pattern_match:
+      type: "regex"
+      patterns:
+        - id: "P-CF-007-A"
+          description: "encryption set to md5 (critically weak)"
+          query: >
+            ^\s*encryption\s*=\s*md5\s*$
+        - id: "P-CF-007-B"
+          description: "encryption set to sha1 (weak, deprecated)"
+          query: >
+            ^\s*encryption\s*=\s*sha1\s*$
+    insecure_example: |
+      [security]
+      encryption = md5
+      ; or
+      encryption = sha1
+    secure_example: |
+      ; After migrating all legacy password hashes, remove or comment out this setting.
+      ; Modern OJS uses bcrypt via PHP password_hash() for new passwords.
+      ; encryption = sha1   ; Keep only if users with sha1 hashes still exist
+    false_positive_conditions:
+      - id: "FP-CF-007-A"
+        verdict: "REVIEW NEEDED — transitional configuration"
+        condition: >
+          The OJS instance has recently upgraded from a legacy version and
+          encryption = sha1 is set during transition to allow existing
+          sha1-hashed passwords to continue working while users log in and have
+          their passwords automatically re-hashed to bcrypt. This is a
+          temporary, necessary state. Flag for a time-boxed remediation plan:
+          after all active users have re-authenticated (typically 30-90 days),
+          force a password reset for remaining users with old-format hashes and
+          remove this setting.
+    remediation: >
+      After confirming all user passwords have been re-hashed to bcrypt (which
+      OJS 3.3+ does automatically on next login), comment out or remove the
+      encryption setting:
+        ; encryption = sha1
+      Force password resets for any users who have not logged in since the
+      upgrade and may still have sha1/md5 hashes:
+        php tools/runScheduledTasks.php lib/pkp/tools/migrateEncryption.php
+      Audit the users table for any remaining legacy-format password hashes.
+    references:
+      - "https://cheatsheetseries.owasp.org/cheatsheets/Password_Storage_Cheat_\
+        Sheet.html"
+      - "https://github.com/pkp/pkp-lib/issues/6729"
+      - "https://docs.pkp.sfu.ca/admin-guide/en/deploy-upgrade"
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # OJS-CF-008 | CWE-330 / CWE-798 | CRITICAL
+  # Default or Weak Password Reset Salt
+  # ─────────────────────────────────────────────────────────────────────────────
+  - id: "OJS-CF-008"
+    name: "Default or Weak Salt — Password Reset Token Predictable"
+    description: >
+      The 'salt' directive in [security] provides a site-specific secret value
+      used in HMAC generation for password reset tokens. When salt is set to the
+      literal default value 'YouMustSetASecretKeyHere!!' (the template default),
+      empty, or any low-entropy string, password reset tokens for ALL users on
+      the installation become predictable by anyone who knows the salt value. A
+      malicious actor with knowledge that a target site uses the default OJS
+      salt can generate valid password reset tokens for any user account
+      (knowing only the user's email address and the default salt), perform
+      account takeover without ever interacting with the reset email flow, and
+      mount offline pre-computation attacks against all user accounts
+      simultaneously. The default salt value is publicly known as it appears in
+      the OJS source code repository and every copy of the default config
+      template distributed with OJS releases.
+    severity: "CRITICAL"
+    category: "configuration"
+    subcategory: "cryptography"
+    cwe: "CWE-798"
+    owasp: "A02:2021"
+    confidence: "HIGH"
+    config_section: "[security]"
+    config_key: "salt"
+    related_cve: []
+    pattern_match:
+      type: "regex"
+      patterns:
+        - id: "P-CF-008-A"
+          description: "salt set to the well-known default value from OJS template"
+          query: >
+            ^\s*salt\s*=\s*["']?YouMustSetASecretKeyHere!!["']?\s*$
+        - id: "P-CF-008-B"
+          description: "salt is empty"
+          query: >
+            ^\s*salt\s*=\s*["']{0,2}\s*["']{0,2}\s*$
+        - id: "P-CF-008-C"
+          description: "salt is too short (fewer than 20 non-whitespace chars)"
+          query: >
+            ^\s*salt\s*=\s*["']?.{1,19}["']?\s*$
+          note: >
+            This pattern may produce false positives for valid short-looking
+            salts in some regex engines; combine with length check post-match.
+    insecure_example: |
+      [security]
+      salt = "YouMustSetASecretKeyHere!!"
+      ; or
+      salt = ""
+    secure_example: |
+      [security]
+      salt = "a7$K9@mX2#pLqWzR5&nJvYcD0eBsUhGi"
+      ; Use: php -r "echo bin2hex(random_bytes(32));" to generate
+    false_positive_conditions:
+      - id: "FP-CF-008-A"
+        verdict: "SAFE — suppress alert"
+        condition: >
+          The salt is a non-default, randomly generated string of at least 32
+          characters containing a mix of uppercase, lowercase, digits, and
+          symbols. Any value that does NOT match the known default template
+          strings and has length >= 32 is considered safe for this check.
+    remediation: >
+      Generate a cryptographically random salt and replace the default value:
+        php -r "echo bin2hex(random_bytes(32)) . PHP_EOL;"
+      Set the generated value in config.inc.php:
+        salt = "your_generated_random_string"
+      After changing the salt, ALL existing password reset tokens are
+      immediately invalidated, which is the desired behavior. Users with
+      in-flight password resets will need to request a new reset link.
+    references:
+      - "https://docs.pkp.sfu.ca/admin-guide/en/deploy-install"
+      - "https://cheatsheetseries.owasp.org/cheatsheets/Cryptographic_Storage_C\
+        heat_Sheet.html"
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # OJS-CF-009 | CWE-321 | HIGH
+  # Empty api_key_secret — API Key Authentication Broken
+  # ─────────────────────────────────────────────────────────────────────────────
+  - id: "OJS-CF-009"
+    name: "Empty api_key_secret — API Key Signing Secret Not Configured"
+    description: >
+      The 'api_key_secret' in [security] is used to encode and decode API keys
+      for external integrations (e.g., ORCID, Crossref, third-party plugins
+      using the OJS REST API). When left empty, API key encoding either uses no
+      secret (making keys trivially forgeable) or the API key feature may be
+      non-functional, preventing legitimate integrations. An attacker who can
+      enumerate or guess user IDs may be able to forge valid API authentication
+      tokens when no signing secret is present, bypassing authentication for
+      API-accessible endpoints. Additionally, some versions of OJS expose API
+      key management in the user profile; without a secret, these keys provide
+      no meaningful authentication guarantee. This is particularly impactful for
+      journals using automation or headless integrations via the REST API.
+    severity: "HIGH"
+    category: "configuration"
+    subcategory: "cryptography"
+    cwe: "CWE-321"
+    owasp: "A02:2021"
+    confidence: "HIGH"
+    config_section: "[security]"
+    config_key: "api_key_secret"
+    related_cve: []
+    pattern_match:
+      type: "regex"
+      patterns:
+        - id: "P-CF-009-A"
+          description: "api_key_secret is empty"
+          query: >
+            ^\s*api_key_secret\s*=\s*["']{0,2}\s*["']{0,2}\s*$
+    insecure_example: |
+      [security]
+      api_key_secret = ""
+    secure_example: |
+      [security]
+      api_key_secret = "5d41402abc4b2a76b9719d911017c592"
+      ; Use: php -r "echo bin2hex(random_bytes(32));" to generate
+    false_positive_conditions:
+      - id: "FP-CF-009-A"
+        verdict: "LOW RISK if API access is disabled"
+        condition: >
+          No API keys have been issued and no external integrations use the OJS
+          REST API for authentication. The API endpoint may still be accessible
+          but not actively used with API key auth. Risk is low but the secret
+          should still be configured as a precaution for future use.
+    remediation: >
+      Generate a cryptographically random API key secret:
+        php -r "echo bin2hex(random_bytes(32)) . PHP_EOL;"
+      Set in config.inc.php:
+        api_key_secret = "your_generated_secret"
+      After setting the secret, existing API keys (if any) that were generated
+      with the empty secret will become invalid. Regenerate API keys for all
+      external integrations after changing this value.
+    references:
+      - "https://docs.pkp.sfu.ca/dev/api/ojs/3.3"
+      - "https://github.com/pkp/pkp-lib/blob/main/classes/security/ApiKeySecuri\
+        tyHandler.php"
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # OJS-CF-010 | CWE-614 | MEDIUM
+  # session_check_ip Disabled — Session Fixation/Hijacking Risk Increased
+  # ─────────────────────────────────────────────────────────────────────────────
+  - id: "OJS-CF-010"
+    name: "session_check_ip = Off — Session Not Bound to Client IP Address"
+    description: >
+      The 'session_check_ip' directive in [security] causes OJS to validate that
+      each request's REMOTE_ADDR matches the IP address that was present when
+      the session was originally created. When set to Off, a stolen session
+      cookie can be used from any IP address to impersonate the authenticated
+      user. This is particularly relevant in contexts where session cookies
+      might be intercepted (e.g., HTTP connections when force_ssl = Off, shared
+      networks, or via XSS attacks). While IP-based session binding has known
+      limitations (mobile users on changing networks, users behind NATs with
+      rotating IPs, IPv4/IPv6 dual- stack transitions), it provides a meaningful
+      additional control against session replay attacks using stolen cookies.
+      When session_check_ip = On (the secure default), OJS terminates the
+      session if the IP changes.
+    severity: "MEDIUM"
+    category: "configuration"
+    subcategory: "session_security"
+    cwe: "CWE-613"
+    owasp: "A07:2021"
+    confidence: "HIGH"
+    config_section: "[security]"
+    config_key: "session_check_ip"
+    related_cve: []
+    pattern_match:
+      type: "regex"
+      patterns:
+        - id: "P-CF-010-A"
+          description: "session_check_ip explicitly set to Off"
+          query: >
+            ^\s*session_check_ip\s*=\s*[Oo][Ff][Ff]\s*$
+    insecure_example: |
+      [security]
+      session_check_ip = Off
+    secure_example: |
+      [security]
+      session_check_ip = On
+    false_positive_conditions:
+      - id: "FP-CF-010-A"
+        verdict: "ACCEPTABLE — suppress with documented justification"
+        condition: >
+          Users are predominantly mobile (frequently changing IPs) or the
+          deployment serves users behind corporate NAT systems where many users
+          share a small pool of exit IPs (causing legitimate session
+          invalidations). In this case, disabling IP check is a usability
+          trade-off. Document the decision and compensate with shorter session
+          lifetimes (session_lifetime = 1) and session_expire_on_close = On.
+    remediation: >
+      Enable IP-based session validation:
+        [security]
+        session_check_ip = On
+      If user experience issues arise from legitimate IP changes, consider
+      reducing session_lifetime and enabling session_expire_on_close = On as
+      compensating controls, rather than disabling session_check_ip entirely.
+    references:
+      - "https://owasp.org/www-community/attacks/Session_hijacking_attack"
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # OJS-CF-011 | CWE-732 | MEDIUM
+  # Unrestricted Plugin Installation Allowed
+  # ─────────────────────────────────────────────────────────────────────────────
+  - id: "OJS-CF-011"
+    name: "allow_plugin_install = on — Unrestricted Plugin Upload Permitted"
+    description: >
+      The 'allow_plugin_install' directive in [security] controls whether
+      Journal Managers and Site Administrators can upload arbitrary plugin ZIP
+      files through the OJS Plugin Gallery interface. When set to 'on', any user
+      with Journal Manager or higher privileges can install arbitrary PHP plugin
+      packages. This is a significant risk because a malicious plugin (or a
+      legitimate plugin with a supply-chain compromise) can execute arbitrary
+      PHP code with the web server's privileges. If an attacker compromises a
+      Journal Manager account, they can immediately escalate to Remote Code
+      Execution by uploading a plugin containing a web shell. In multi-tenant
+      OJS deployments, this affects all journals. Options are: 'on'
+      (unrestricted), 'gallery_only' (only official PKP Gallery), 'upgrade_only'
+      (no new plugins, gallery upgrades only), or 'off'.
+    severity: "MEDIUM"
+    category: "configuration"
+    subcategory: "access_control"
+    cwe: "CWE-284"
+    owasp: "A01:2021"
+    confidence: "HIGH"
+    config_section: "[security]"
+    config_key: "allow_plugin_install"
+    related_cve: []
+    pattern_match:
+      type: "regex"
+      patterns:
+        - id: "P-CF-011-A"
+          description: "allow_plugin_install set to unrestricted 'on'"
+          query: >
+            ^\s*allow_plugin_install\s*=\s*on\s*$
+    insecure_example: |
+      [security]
+      allow_plugin_install = on
+    secure_example: |
+      [security]
+      allow_plugin_install = gallery_only
+      ; or for highest restriction:
+      ; allow_plugin_install = off
+    false_positive_conditions:
+      - id: "FP-CF-011-A"
+        verdict: "REVIEW NEEDED — may be intentional during development"
+        condition: >
+          The OJS instance is a development or testing environment where custom
+          plugin development requires upload capability. For production,
+          restrict to 'gallery_only' or 'off' and deploy custom plugins via the
+          file system (not through the UI upload mechanism).
+    remediation: >
+      Restrict plugin installation to the official PKP Gallery only:
+        allow_plugin_install = gallery_only
+      For production deployments where no new plugins are expected:
+        allow_plugin_install = upgrade_only
+      For locked-down production deployments:
+        allow_plugin_install = off
+      Deploy approved custom plugins directly to the filesystem under plugins/
+      rather than through the upload interface. Regularly audit installed
+      plugins.
+    references:
+      - "https://docs.pkp.sfu.ca/admin-guide/en/plugin-management"
+      - "https://forum.pkp.sfu.ca/t/plugin-security-best-practices/71234"
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # OJS-CF-012 | CWE-311 | MEDIUM
+  # Cookie Encryption Disabled (cookie_encryption commented out or Off)
+  # ─────────────────────────────────────────────────────────────────────────────
+  - id: "OJS-CF-012"
+    name: "cookie_encryption Disabled — Session Cookie Content Unencrypted"
+    description: >
+      The 'cookie_encryption' directive in [security] controls whether OJS
+      encrypts the content of session cookies using the app_key before setting
+      them. When disabled (Off or commented out), session cookie values are
+      stored in a base64-encoded but unencrypted format. Any actor who can read
+      the session cookie value (via network interception, XSS exfiltration,
+      browser compromise, or server-side session storage access) can decode the
+      session data and potentially extract sensitive session attributes. Cookie
+      encryption provides an additional layer of confidentiality for session
+      data beyond the HTTP-level Secure and HttpOnly flags. Note that this
+      setting depends on a strong app_key being configured; if app_key is empty,
+      enabling cookie_encryption provides no benefit (see OJS-CF-001).
+    severity: "MEDIUM"
+    category: "configuration"
+    subcategory: "session_security"
+    cwe: "CWE-311"
+    owasp: "A02:2021"
+    confidence: "MEDIUM"
+    config_section: "[security]"
+    config_key: "cookie_encryption"
+    related_cve: []
+    pattern_match:
+      type: "regex"
+      patterns:
+        - id: "P-CF-012-A"
+          description: "cookie_encryption explicitly set to Off"
+          query: >
+            ^\s*cookie_encryption\s*=\s*[Oo][Ff][Ff]\s*$
+        - id: "P-CF-012-B"
+          description: "cookie_encryption directive is commented out (absent = Off)"
+          query: >
+            ^\s*;\s*cookie_encryption\s*=
+          note: "Commented-out lines mean the feature is disabled"
+    insecure_example: |
+      [security]
+      ; cookie_encryption = On
+      ; -- or --
+      cookie_encryption = Off
+    secure_example: |
+      [security]
+      cookie_encryption = On
+      ; Requires a strong app_key to be effective (see OJS-CF-001)
+    false_positive_conditions:
+      - id: "FP-CF-012-A"
+        verdict: "LOWER RISK if force_ssl = On and HttpOnly cookies enforced"
+        condition: >
+          force_ssl = On is configured (preventing cookie interception over
+          HTTP) AND cookies are HttpOnly (preventing JavaScript access). Cookie
+          content encryption is defense-in-depth in this context. Still
+          recommended but not critical if the above are confirmed.
+    remediation: >
+      Enable cookie encryption (requires a strong app_key to be configured
+      first):
+        [security]
+        cookie_encryption = On
+      Warning: Changing this setting will invalidate all existing sessions,
+      logging out all current users. Schedule the change during a maintenance
+      window and communicate to users that they will need to log in again.
+    references:
+      - "https://docs.pkp.sfu.ca/admin-guide/en/deploy-encryption"
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # OJS-CF-013 | CWE-916 | LOW
+  # Weak Cipher Algorithm (AES-128 instead of AES-256)
+  # ─────────────────────────────────────────────────────────────────────────────
+  - id: "OJS-CF-013"
+    name: "Weak Cipher — AES-128 Configured Instead of AES-256 for Encryption"
+    description: >
+      The 'cipher' directive in [security] sets the symmetric encryption
+      algorithm used for OJS's application-level encryption operations (e.g.,
+      cookie encryption via the app_key). AES-128-CBC and AES-128-GCM use
+      128-bit keys, which while currently not broken, provide less cryptographic
+      margin than AES-256. AES-256-GCM is the recommended cipher: it provides
+      authenticated encryption (protecting against tampering as well as
+      disclosure), uses a 256-bit key (providing larger security margin against
+      future advances in cryptanalysis), and is supported natively by PHP's
+      OpenSSL extension. The CBC mode variants (aes-128-cbc, aes-256-cbc) lack
+      built-in authentication and require separate MAC computation to prevent
+      padding oracle attacks. GCM mode is preferred over CBC for all new
+      deployments.
+    severity: "LOW"
+    category: "configuration"
+    subcategory: "cryptography"
+    cwe: "CWE-327"
+    owasp: "A02:2021"
+    confidence: "HIGH"
+    config_section: "[security]"
+    config_key: "cipher"
+    related_cve: []
+    pattern_match:
+      type: "regex"
+      patterns:
+        - id: "P-CF-013-A"
+          description: "cipher set to aes-128-cbc (weak key size, no authentication)"
+          query: >
+            ^\s*cipher\s*=\s*aes-128-cbc\s*$
+        - id: "P-CF-013-B"
+          description: "cipher set to aes-128-gcm (weak key size, has authentication)"
+          query: >
+            ^\s*cipher\s*=\s*aes-128-gcm\s*$
+        - id: "P-CF-013-C"
+          description: "cipher set to aes-256-cbc (strong key but lacks authentication)"
+          query: >
+            ^\s*cipher\s*=\s*aes-256-cbc\s*$
+    insecure_example: |
+      [security]
+      cipher = aes-128-cbc
+    secure_example: |
+      [security]
+      cipher = aes-256-gcm
+    false_positive_conditions:
+      - id: "FP-CF-013-A"
+        verdict: "ACCEPTABLE — AES-256-CBC is acceptable, GCM preferred"
+        condition: >
+          The cipher is aes-256-cbc (256-bit key, CBC mode). This is acceptable
+          but not optimal. Upgrade to aes-256-gcm when possible to gain
+          authenticated encryption. Report as LOW severity finding.
+    remediation: >
+      Change the cipher to AES-256-GCM:
+        [security]
+        cipher = aes-256-gcm
+      Note: If cookie_encryption = On, changing the cipher will invalidate all
+      existing encrypted cookies, requiring users to log in again. Pair this
+      change with a key rotation of app_key for best security posture.
+    references:
+      - "https://csrc.nist.gov/publications/detail/sp/800-38d/final"
+      - "https://www.php.net/manual/en/function.openssl-get-cipher-methods.php"
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # OJS-CF-014 | CWE-16 | MEDIUM
+  # Admin Re-Authentication Timeout Disabled (password_timeout = 0)
+  # ─────────────────────────────────────────────────────────────────────────────
+  - id: "OJS-CF-014"
+    name: "password_timeout Disabled — Admin Area Accessible Without
+      Re-Authentication"
+    description: >
+      The 'password_timeout' directive in [security] controls how many minutes
+      an authenticated Site Administrator can access the administration area
+      before being required to re-enter their password. When set to 0 (or
+      commented out), administrators never need to re-authenticate for the admin
+      panel — a single login session grants permanent access to all admin
+      functions for the lifetime of the session. This is significant because:
+      (1) If an administrator's workstation is left unattended with an active
+      browser session, an attacker with physical access can access all admin
+      functions. (2) If a session is hijacked via XSS or network interception,
+      the hijacker gains permanent admin access without any additional friction.
+      Re-authentication timeouts are a standard defense-in-depth control for
+      sensitive administrative interfaces, recommended by NIST 800-63B for
+      privileged access contexts.
+    severity: "MEDIUM"
+    category: "configuration"
+    subcategory: "access_control"
+    cwe: "CWE-613"
+    owasp: "A07:2021"
+    confidence: "MEDIUM"
+    config_section: "[security]"
+    config_key: "password_timeout"
+    related_cve: []
+    pattern_match:
+      type: "regex"
+      patterns:
+        - id: "P-CF-014-A"
+          description: "password_timeout explicitly set to 0 (disabled)"
+          query: >
+            ^\s*password_timeout\s*=\s*0\s*$
+        - id: "P-CF-014-B"
+          description: "password_timeout directive is commented out (disabled)"
+          query: >
+            ^\s*;\s*password_timeout\s*=
+    insecure_example: |
+      [security]
+      ;password_timeout = 0
+    secure_example: |
+      [security]
+      password_timeout = 15
+      ; Re-authentication required after 15 minutes of inactivity in admin area
+    false_positive_conditions:
+      - id: "FP-CF-014-A"
+        verdict: "CONTEXT REQUIRED — short session_lifetime may compensate"
+        condition: >
+          The global session_lifetime is configured to a short value (e.g., 1
+          day or less) and session_expire_on_close = On is set. In this case,
+          the overall session exposure window is limited. Still recommended to
+          configure password_timeout for privilege separation.
+    remediation: >
+      Enable admin re-authentication with an appropriate timeout:
+        [security]
+        password_timeout = 15
+      Set the value in minutes. A value of 15-30 minutes is appropriate for most
+      deployments. Lower values (5-10 minutes) are recommended for high-security
+      environments. This requires the admin to re-enter their password when
+      accessing the site administration area after the timeout.
+    references:
+      - "https://pages.nist.gov/800-63-3/sp800-63b.html"
+      - "https://github.com/pkp/pkp-lib/issues/8290"
+
+  # ════════════════════════════════════════════════════════════════════════════════
+  # SECTION: [database]
+  # ════════════════════════════════════════════════════════════════════════════════
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # OJS-CF-015 | CWE-798 | CRITICAL
+  # Default Database Credentials (username=ojs, password=ojs)
+  # ─────────────────────────────────────────────────────────────────────────────
+  - id: "OJS-CF-015"
+    name: "Default Database Credentials — username=ojs and/or password=ojs Detected"
+    description: >
+      The [database] section credentials (username and password) in the OJS
+      config template default to 'ojs' for both the username and the password.
+      Using default credentials is one of the most exploited misconfigurations
+      in web applications. If an attacker gains read access to config.inc.php
+      (e.g., via a path traversal vulnerability, a misconfigured web server that
+      serves PHP source files, or file inclusion), they immediately have working
+      database credentials. Even without direct web access, default credentials
+      are often the first thing attempted in brute-force attacks against exposed
+      database ports. Default credentials also indicate that the OJS
+      installation wizard may not have been properly completed or that
+      credentials were never changed post-installation. Additionally, a password
+      of 'ojs' or username of 'ojs' is trivially guessable — it appears in all
+      published OJS documentation and is likely in every credential brute-force
+      wordlist targeting OJS.
+    severity: "CRITICAL"
+    category: "configuration"
+    subcategory: "authentication"
+    cwe: "CWE-798"
+    owasp: "A07:2021"
+    confidence: "HIGH"
+    config_section: "[database]"
+    config_key: "username / password"
+    related_cve: []
+    pattern_match:
+      type: "regex"
+      patterns:
+        - id: "P-CF-015-A"
+          description: "Database password set to default 'ojs'"
+          query: >
+            ^\s*password\s*=\s*ojs\s*$
+        - id: "P-CF-015-B"
+          description: "Database username set to default 'ojs'"
+          query: >
+            ^\s*username\s*=\s*ojs\s*$
+        - id: "P-CF-015-C"
+          description: "Database name set to default 'ojs'"
+          query: >
+            ^\s*name\s*=\s*ojs\s*$
+    insecure_example: |
+      [database]
+      username = ojs
+      password = ojs
+      name = ojs
+    secure_example: |
+      [database]
+      username = myjournal_dbuser
+      password = "Xk9#mP2@qLvR7&nJ"
+      name = myjournal_production
+    false_positive_conditions:
+      - id: "FP-CF-015-A"
+        verdict: "ACCEPTABLE only in local development"
+        condition: >
+          The OJS instance is a local development environment on localhost with
+          no external network access and no real user data. Default credentials
+          in development are tolerable but should be changed before any data is
+          migrated or the instance is promoted to production.
+    remediation: >
+      Change database credentials in both config.inc.php AND the database:
+        1. In config.inc.php:
+           username = your_unique_dbuser
+           password = "your_strong_password_min_20_chars"
+           name = your_database_name
+        2. In MySQL/PostgreSQL:
+           CREATE USER 'your_unique_dbuser'@'localhost' IDENTIFIED BY 'your_strong_password';
+           GRANT SELECT, INSERT, UPDATE, DELETE, CREATE, DROP, INDEX, ALTER
+             ON your_database_name.* TO 'your_unique_dbuser'@'localhost';
+           DROP USER 'ojs'@'localhost';
+        3. Apply principle of least privilege — the database user should not have
+           SUPER or GRANT privileges.
+    references:
+      - "https://docs.pkp.sfu.ca/admin-guide/en/deploy-install"
+      - "https://cheatsheetseries.owasp.org/cheatsheets/Database_Security_Cheat\
+        _Sheet.html"
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # OJS-CF-016 | CWE-215 | HIGH
+  # Database Debug Mode Enabled — SQL Query Disclosure
+  # ─────────────────────────────────────────────────────────────────────────────
+  - id: "OJS-CF-016"
+    name: "Database debug = On — SQL Queries Logged/Displayed (Information
+      Disclosure)"
+    description: >
+      The 'debug' directive in the [database] section enables verbose database
+      query logging when set to On. The OJS template explicitly warns this is
+      'very verbose!'. In a production environment, database debug mode can
+      expose the full text of all SQL queries executed by OJS, including queries
+      that contain: (1) user authentication data (hashed passwords, session
+      identifiers), (2) journal configuration data (SMTP credentials stored in
+      settings tables), (3) private reviewer assignments and manuscript content,
+      and (4) internal system structure information useful for crafting targeted
+      SQL injection attacks. Depending on the OJS version and PHP error logging
+      configuration, debug output may appear in HTTP responses, PHP error logs,
+      or application logs. Any of these locations may be accessible to
+      unauthorized parties.
+    severity: "HIGH"
+    category: "configuration"
+    subcategory: "information_disclosure"
+    cwe: "CWE-215"
+    owasp: "A09:2021"
+    confidence: "HIGH"
+    config_section: "[database]"
+    config_key: "debug"
+    related_cve: []
+    pattern_match:
+      type: "regex"
+      patterns:
+        - id: "P-CF-016-A"
+          description: "Database debug explicitly enabled"
+          query: >
+            ^\s*debug\s*=\s*[Oo][Nn]\s*$
+          note: "Match within [database] section context only; 'debug' key appears in
+            multiple sections"
+    insecure_example: |
+      [database]
+      debug = On
+    secure_example: |
+      [database]
+      debug = Off
+    false_positive_conditions:
+      - id: "FP-CF-016-A"
+        verdict: "ACCEPTABLE only in isolated development"
+        condition: >
+          The instance is a development/testing environment with no real user
+          data, no internet access, and debug output is directed only to private
+          server logs (not rendered in HTTP responses). Must be disabled before
+          any production promotion.
+    remediation: >
+      Disable database debug mode immediately in production:
+        [database]
+        debug = Off
+      If SQL query logging is needed for performance analysis in production, use
+      the database server's slow query log (MySQL: slow_query_log) instead of
+      application-level debug output. Ensure log files are protected with
+      appropriate filesystem permissions.
+    references:
+      - "https://owasp.org/www-project-top-ten/2017/A3_2017-Sensitive_Data_Expo\
+        sure"
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # OJS-CF-017 | CWE-311 | MEDIUM
+  # Database Connection Without SSL/TLS Encryption
+  # ─────────────────────────────────────────────────────────────────────────────
+  - id: "OJS-CF-017"
+    name: "Database SSL Disabled — Database Traffic Transmitted Without Encryption"
+    description: >
+      The [database] section supports SSL/TLS encrypted connections to the
+      database server via the 'secure', 'capath', and 'verify' settings. When
+      'secure = Off' or the secure setting is absent/commented out, the
+      connection between OJS and its database is transmitted in plaintext. On
+      shared hosting environments, cloud deployments where the application and
+      database servers communicate over a non-localhost network, or in
+      environments where the database is on a separate physical or virtual host,
+      this exposes ALL database traffic (including password hashes, session
+      data, manuscript content, and reviewer comments) to network-level
+      eavesdropping. Modern MySQL 8.0+, MariaDB 10.4+, and PostgreSQL 12+ all
+      support TLS by default. Additionally, skipping certificate verification
+      (verify = Off) while using secure = On is equivalent to no TLS — it
+      enables Man-in-the- Middle attacks against the encrypted channel.
+    severity: "MEDIUM"
+    category: "configuration"
+    subcategory: "transport_security"
+    cwe: "CWE-319"
+    owasp: "A02:2021"
+    confidence: "MEDIUM"
+    config_section: "[database]"
+    config_key: "secure / verify"
+    related_cve: []
+    pattern_match:
+      type: "regex"
+      patterns:
+        - id: "P-CF-017-A"
+          description: "Database SSL explicitly disabled"
+          query: >
+            ^\s*secure\s*=\s*[Oo][Ff][Ff]\s*$
+        - id: "P-CF-017-B"
+          description: "Database SSL verification explicitly disabled (MitM risk)"
+          query: >
+            ^\s*verify\s*=\s*[Oo][Ff][Ff]\s*$
+        - id: "P-CF-017-C"
+          description: "Database SSL commented out (absent = not enabled)"
+          query: >
+            ^\s*;\s*secure\s*=\s*(Off|On)
+    insecure_example: |
+      [database]
+      ; secure = Off
+      ; verify = On
+    secure_example: |
+      [database]
+      secure = On
+      capath = /etc/ssl/certs/ca-certificates.crt
+      verify = On
+    false_positive_conditions:
+      - id: "FP-CF-017-A"
+        verdict: "LOWER RISK — database on same host via Unix socket"
+        condition: >
+          The database server is on the same physical/virtual host as the OJS
+          application and communication occurs via Unix domain socket
+          (configured via unix_socket in [database]). Unix socket traffic never
+          traverses the network and does not require TLS encryption. Verify the
+          unix_socket setting is configured and no TCP connection is used.
+    remediation: >
+      Enable SSL/TLS for the database connection:
+        [database]
+        secure = On
+        capath = /etc/ssl/certs/ca-certificates.crt   ; path to CA bundle
+        verify = On
+      Obtain the CA certificate from your database server provider. For cloud
+      databases (AWS RDS, Azure, Google Cloud SQL), download their specific CA
+      certificate bundles. For self-managed databases, ensure the database
+      server certificate is signed by a trusted CA.
+    references:
+      - "https://dev.mysql.com/doc/refman/8.0/en/encrypted-connections.html"
+      - "https://docs.pkp.sfu.ca/admin-guide/en/deploy-production"
+
+  # ════════════════════════════════════════════════════════════════════════════════
+  # SECTION: [debug]
+  # ════════════════════════════════════════════════════════════════════════════════
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # OJS-CF-018 | CWE-209 | HIGH
+  # Stack Trace Display Enabled in Production
+  # ─────────────────────────────────────────────────────────────────────────────
+  - id: "OJS-CF-018"
+    name: "show_stacktrace = On — Full Stack Traces Exposed in HTTP Responses"
+    description: >
+      The 'show_stacktrace' directive in [debug] causes OJS to display full PHP
+      stack traces in the browser when a fatal error occurs. Stack traces
+      reveal: (1) Absolute filesystem paths to OJS source files, exposing server
+      directory structure and helping attackers target specific file paths for
+      inclusion or traversal attacks. (2) Internal class and method names,
+      enabling targeted code review of vulnerable components. (3) Function
+      arguments in some PHP versions, which may include sensitive data values
+      (usernames, query strings, file paths). (4) Database query patterns
+      exposed through DAOException stack frames. The OJS template explicitly
+      states this 'may expose private information and should be disabled for any
+      production system.' This is a HIGH severity finding because stack traces
+      directly accelerate exploitation of other vulnerabilities by providing
+      precise intelligence about the target.
+    severity: "HIGH"
+    category: "configuration"
+    subcategory: "information_disclosure"
+    cwe: "CWE-209"
+    owasp: "A05:2021"
+    confidence: "HIGH"
+    config_section: "[debug]"
+    config_key: "show_stacktrace"
+    related_cve: []
+    pattern_match:
+      type: "regex"
+      patterns:
+        - id: "P-CF-018-A"
+          description: "show_stacktrace explicitly set to On"
+          query: >
+            ^\s*show_stacktrace\s*=\s*[Oo][Nn]\s*$
+    insecure_example: |
+      [debug]
+      show_stacktrace = On
+    secure_example: |
+      [debug]
+      show_stacktrace = Off
+    false_positive_conditions:
+      - id: "FP-CF-018-A"
+        verdict: "ACCEPTABLE only in local/private development"
+        condition: >
+          The OJS instance is accessible only on localhost or a private network
+          with no external access and contains no real user data. Stack traces
+          are acceptable for developer debugging. Must be disabled immediately
+          before any deployment to a network with external access.
+    remediation: >
+      Disable stack trace display immediately:
+        [debug]
+        show_stacktrace = Off
+      Configure server-side error logging instead of client-side error display.
+      In php.ini, ensure: log_errors = On, error_log =
+      /path/to/private/error.log, display_errors = Off. Errors will be logged
+      server-side without being exposed to users or attackers.
+    references:
+      - "https://owasp.org/www-project-top-ten/"
+      - "https://www.php.net/manual/en/errorfunc.configuration.php"
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # OJS-CF-019 | CWE-209 | MEDIUM
+  # PHP Error Display Enabled — Application Errors Visible to Users
+  # ─────────────────────────────────────────────────────────────────────────────
+  - id: "OJS-CF-019"
+    name: "display_errors = On — Application Errors Displayed in HTTP Responses"
+    description: >
+      The 'display_errors' directive in [debug] causes OJS to display PHP error
+      messages (warnings, notices, deprecated notices) directly in HTTP
+      responses. While less severe than show_stacktrace, error messages can
+      reveal: (1) PHP file paths and variable names from warning messages about
+      undefined variables, type mismatches, or deprecated function calls. (2)
+      Database connection error details (host, port, database name) from
+      connection failure messages. (3) Include/require failure messages that
+      disclose absolute paths. (4) Type mismatch errors that reveal expected
+      parameter formats (useful for crafting injection payloads). In production,
+      all errors should be logged server-side and never displayed to end users.
+      This also degrades user experience, as PHP notices may appear embedded
+      within normal page content.
+    severity: "MEDIUM"
+    category: "configuration"
+    subcategory: "information_disclosure"
+    cwe: "CWE-209"
+    owasp: "A05:2021"
+    confidence: "HIGH"
+    config_section: "[debug]"
+    config_key: "display_errors"
+    related_cve: []
+    pattern_match:
+      type: "regex"
+      patterns:
+        - id: "P-CF-019-A"
+          description: "display_errors set to On"
+          query: >
+            ^\s*display_errors\s*=\s*[Oo][Nn]\s*$
+    insecure_example: |
+      [debug]
+      display_errors = On
+    secure_example: |
+      [debug]
+      display_errors = Off
+    false_positive_conditions:
+      - id: "FP-CF-019-A"
+        verdict: "ACCEPTABLE only in development"
+        condition: >
+          Same conditions as OJS-CF-018: local/private development environment
+          with no external access and no real user data.
+    remediation: >
+      Disable error display for all non-development environments:
+        [debug]
+        display_errors = Off
+      Also verify PHP's global php.ini setting: display_errors = Off. Enable
+      log_errors = On and configure a private error_log path.
+    references:
+      - "https://www.php.net/manual/en/errorfunc.configuration.php"
+
+  # ════════════════════════════════════════════════════════════════════════════════
+  # SECTION: [email]
+  # ════════════════════════════════════════════════════════════════════════════════
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # OJS-CF-020 | CWE-295 | HIGH
+  # SMTP Certificate Verification Suppressed — Email MitM Possible
+  # ─────────────────────────────────────────────────────────────────────────────
+  - id: "OJS-CF-020"
+    name: "smtp_suppress_cert_check = On — SMTP TLS Certificate Not Verified (MitM
+      Risk)"
+    description: >
+      The 'smtp_suppress_cert_check' directive in [email] disables TLS
+      certificate verification when connecting to the SMTP server for outbound
+      email delivery. When set to On, OJS will establish a TLS connection to the
+      SMTP server without verifying that the server's certificate is valid and
+      signed by a trusted Certificate Authority. This allows a Man-in-the-Middle
+      attacker positioned between OJS and the SMTP server to intercept all
+      outbound emails sent by OJS. This includes: (1) Password reset emails
+      containing active reset tokens — interception enables account takeover for
+      any user who requests a password reset. (2) Reviewer invitation emails —
+      interception can leak the identities of invited reviewers (breaking
+      double-blind review). (3) Submission confirmation emails — can expose
+      manuscript details. The OJS template explicitly notes this is 'not
+      recommended for security reasons.'
+    severity: "HIGH"
+    category: "configuration"
+    subcategory: "transport_security"
+    cwe: "CWE-295"
+    owasp: "A02:2021"
+    confidence: "HIGH"
+    config_section: "[email]"
+    config_key: "smtp_suppress_cert_check"
+    related_cve: []
+    pattern_match:
+      type: "regex"
+      patterns:
+        - id: "P-CF-020-A"
+          description: "smtp_suppress_cert_check explicitly enabled"
+          query: >
+            ^\s*smtp_suppress_cert_check\s*=\s*[Oo][Nn]\s*$
+    insecure_example: |
+      [email]
+      smtp_suppress_cert_check = On
+    secure_example: |
+      [email]
+      ; smtp_suppress_cert_check = On    ; NEVER enable in production
+      ; Ensure smtp_server has a valid, trusted TLS certificate
+    false_positive_conditions:
+      - id: "FP-CF-020-A"
+        verdict: "CONTEXT REQUIRED — internal SMTP with self-signed cert"
+        condition: >
+          The SMTP server is an internal mail relay using a self-signed
+          certificate on a trusted internal network (no internet exposure). Risk
+          is reduced but still present from internal network threats.
+          Recommended alternative: install the internal CA certificate into the
+          system trust store so certificate verification can be enabled without
+          suppression.
+    remediation: >
+      Disable SMTP certificate check suppression:
+        ; smtp_suppress_cert_check = On   ; Comment out or remove this line
+      Ensure the SMTP server has a valid, trusted TLS certificate. If using a
+      service like SendGrid, Mailgun, or AWS SES, they provide valid
+      certificates by default. If using an internal SMTP relay with a
+      self-signed certificate, add the CA to the system's trusted CA bundle
+      (typically /etc/ssl/certs/ca-certificates.crt on Linux) rather than
+      suppressing verification entirely.
+    references:
+      - "https://www.phpcmailer.com/documentation/class-PHPMailer.html"
+      - "https://owasp.org/www-community/controls/Certificate_and_Public_Key_Pi\
+        nning"
+
+  # ════════════════════════════════════════════════════════════════════════════════
+  # SECTION: [captcha]
+  # ════════════════════════════════════════════════════════════════════════════════
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # OJS-CF-021 | CWE-307 | MEDIUM
+  # Captcha Disabled — No Bot Protection for Registration and Login
+  # ─────────────────────────────────────────────────────────────────────────────
+  - id: "OJS-CF-021"
+    name: "CAPTCHA Disabled — Registration and Login Exposed to Automated Bot
+      Attacks"
+    description: >
+      When both 'recaptcha = off' and 'altcha = off' are set in [captcha] (or
+      when captcha_on_register and captcha_on_login are both disabled), OJS's
+      user registration and login forms have no bot protection. This enables:
+      (1) Automated mass account creation — bots can register thousands of
+      accounts, which can be used to spam the system, fake reviewer assignments,
+      or inflate submission counts. (2) Credential stuffing attacks — automated
+      tools can attempt known username/password combinations from breach
+      databases at high speed against the login form. (3) Brute-force password
+      attacks — systematic password guessing against specific accounts
+      (especially admins). (4) Fake peer review manipulation — fake reviewer
+      accounts can accept invitations and provide fraudulent reviews. OJS
+      journals that have disabled captcha have historically been targeted by
+      mass fake account registration campaigns leading to spam submissions and
+      retraction events.
+    severity: "MEDIUM"
+    category: "configuration"
+    subcategory: "authentication"
+    cwe: "CWE-307"
+    owasp: "A07:2021"
+    confidence: "HIGH"
+    config_section: "[captcha]"
+    config_key: "recaptcha / altcha"
+    related_cve: []
+    pattern_match:
+      type: "regex"
+      patterns:
+        - id: "P-CF-021-A"
+          description: "reCAPTCHA disabled"
+          query: >
+            ^\s*recaptcha\s*=\s*[Oo][Ff][Ff]\s*$
+        - id: "P-CF-021-B"
+          description: "ALTCHA disabled"
+          query: >
+            ^\s*altcha\s*=\s*[Oo][Ff][Ff]\s*$
+        - id: "P-CF-021-C"
+          description: "captcha_on_register explicitly disabled"
+          query: >
+            ^\s*captcha_on_register\s*=\s*[Oo][Ff][Ff]\s*$
+        - id: "P-CF-021-D"
+          description: "captcha_on_login explicitly disabled"
+          query: >
+            ^\s*captcha_on_login\s*=\s*[Oo][Ff][Ff]\s*$
+    insecure_example: |
+      [captcha]
+      recaptcha = off
+      altcha = off
+    secure_example: |
+      [captcha]
+      ; Option A: reCAPTCHA v2/v3
+      recaptcha = on
+      recaptcha_public_key = "your_actual_site_key_from_google"
+      recaptcha_private_key = "your_actual_secret_key_from_google"
+      captcha_on_register = on
+      captcha_on_login = on
+      recaptcha_enforce_hostname = On
+      ; Option B: ALTCHA (privacy-friendly alternative)
+      ; altcha = on
+      ; altcha_hmackey = "your_generated_random_hmac_key"
+    false_positive_conditions:
+      - id: "FP-CF-021-A"
+        verdict: "ACCEPTABLE if alternative bot mitigations are in place"
+        condition: >
+          The OJS instance is a closed/invitation-only journal where user
+          registration is disabled (users are created by admins only) AND login
+          brute force is mitigated by a web application firewall or
+          rate-limiting reverse proxy (e.g., fail2ban, nginx limit_req). Captcha
+          on login may be skipped. Registration captcha is not needed if
+          registration is disabled.
+    remediation: >
+      Enable CAPTCHA for registration and login. For privacy-preserving
+      protection, use ALTCHA (no Google dependency):
+        [captcha]
+        altcha = on
+        altcha_hmackey = "your_secure_random_key"  ; use: php -r "echo bin2hex(random_bytes(32));"
+        altcha_on_register = on
+        altcha_on_login = on
+        altcha_on_lost_password = on
+      Or for reCAPTCHA, obtain valid keys from console.google.com/recaptcha and:
+        recaptcha = on
+        recaptcha_public_key = "your_real_site_key"
+        recaptcha_private_key = "your_real_secret_key"
+        captcha_on_register = on
+        captcha_on_login = on
+        recaptcha_enforce_hostname = On
+    references:
+      - "https://docs.pkp.sfu.ca/admin-guide/en/captcha"
+      - "https://altcha.org/docs/"
+      - "https://www.google.com/recaptcha/"
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # OJS-CF-022 | CWE-798 | HIGH
+  # Default or Placeholder reCAPTCHA Keys
+  # ─────────────────────────────────────────────────────────────────────────────
+  - id: "OJS-CF-022"
+    name: "Default/Placeholder reCAPTCHA Keys — CAPTCHA Validation Non-Functional"
+    description: >
+      When 'recaptcha = on' but the reCAPTCHA keys are set to template
+      placeholder values ('your_public_key', 'your_private_key') or left empty,
+      the reCAPTCHA widget will either fail to render or fail to validate
+      responses against Google's verification API. This creates a false sense of
+      security: operators believe CAPTCHA is enabled (because recaptcha = on),
+      but in practice the verification endpoint returns errors that OJS may
+      silently ignore, allowing bots to bypass the CAPTCHA entirely. This is
+      effectively the same as having captcha disabled (see OJS-CF-021) but is
+      more dangerous because operators may not realize the protection is
+      non-functional. Additionally, placeholder keys like 'your_public_key' are
+      not valid reCAPTCHA site keys and will cause the widget to throw
+      JavaScript errors, potentially breaking the registration/login forms for
+      legitimate users as well.
+    severity: "HIGH"
+    category: "configuration"
+    subcategory: "authentication"
+    cwe: "CWE-1390"
+    owasp: "A07:2021"
+    confidence: "HIGH"
+    config_section: "[captcha]"
+    config_key: "recaptcha_public_key / recaptcha_private_key"
+    related_cve: []
+    pattern_match:
+      type: "regex"
+      patterns:
+        - id: "P-CF-022-A"
+          description: "recaptcha_public_key set to template default"
+          query: >
+            ^\s*recaptcha_public_key\s*=\s*your_public_key\s*$
+        - id: "P-CF-022-B"
+          description: "recaptcha_private_key set to template default"
+          query: >
+            ^\s*recaptcha_private_key\s*=\s*your_private_key\s*$
+        - id: "P-CF-022-C"
+          description: "recaptcha_public_key is empty"
+          query: >
+            ^\s*recaptcha_public_key\s*=\s*["']{0,2}\s*["']{0,2}\s*$
+        - id: "P-CF-022-D"
+          description: "recaptcha_private_key is empty"
+          query: >
+            ^\s*recaptcha_private_key\s*=\s*["']{0,2}\s*["']{0,2}\s*$
+    insecure_example: |
+      [captcha]
+      recaptcha = on
+      recaptcha_public_key = your_public_key
+      recaptcha_private_key = your_private_key
+    secure_example: |
+      [captcha]
+      recaptcha = on
+      recaptcha_public_key = "6LcXXXXXXXXXXXXXXXXXXXXXXXXXXXX"   ; real 40-char key from Google
+      recaptcha_private_key = "6LcXXXXXXXXXXXXXXXXXXXXXXXXXXXX"  ; real 40-char key from Google
+      recaptcha_enforce_hostname = On
+    false_positive_conditions:
+      - id: "FP-CF-022-A"
+        verdict: "FALSE POSITIVE — using ALTCHA instead"
+        condition: >
+          recaptcha = off AND altcha = on AND altcha_hmackey is a valid
+          non-default non-empty value. The reCAPTCHA keys being placeholder
+          values are irrelevant if reCAPTCHA is disabled. Suppress this alert if
+          altcha = on with a valid key.
+    remediation: >
+      Register the OJS domain at https://www.google.com/recaptcha/admin/create
+      and obtain real site key (public) and secret key (private), then:
+        recaptcha_public_key = "your_real_40char_site_key"
+        recaptcha_private_key = "your_real_40char_secret_key"
+        recaptcha_enforce_hostname = On
+      Alternatively, use ALTCHA (privacy-friendly, no Google account needed):
+        recaptcha = off
+        altcha = on
+        altcha_hmackey = "generated_random_key"
+    references:
+      - "https://www.google.com/recaptcha/admin"
+      - "https://developers.google.com/recaptcha/docs/v3"
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # OJS-CF-023 | CWE-798 | HIGH
+  # Default ALTCHA HMAC Key
+  # ─────────────────────────────────────────────────────────────────────────────
+  - id: "OJS-CF-023"
+    name: "Default ALTCHA HMAC Key — CAPTCHA Challenge Forgeable"
+    description: >
+      The 'altcha_hmackey' in [captcha] is the secret key used by the ALTCHA
+      proof-of-work challenge system to sign its challenges and verify
+      responses. When set to the template default 'Example key', this secret is
+      publicly known (it appears in the OJS source code and documentation),
+      allowing any attacker to: (1) Pre-generate valid ALTCHA challenge
+      responses using the known key before interacting with the target server.
+      (2) Forge ALTCHA verification tokens that OJS will accept as legitimate
+      proof-of-work completions. (3) Effectively bypass ALTCHA bot protection
+      entirely, making automated registration and login attacks trivially
+      possible even when altcha = on. This has identical impact to having
+      CAPTCHA disabled but is more insidious because operators may not realize
+      the default key renders the protection non-functional. The ALTCHA
+      specification requires a cryptographically random, site-unique HMAC key.
+    severity: "HIGH"
+    category: "configuration"
+    subcategory: "authentication"
+    cwe: "CWE-798"
+    owasp: "A07:2021"
+    confidence: "HIGH"
+    config_section: "[captcha]"
+    config_key: "altcha_hmackey"
+    related_cve: []
+    pattern_match:
+      type: "regex"
+      patterns:
+        - id: "P-CF-023-A"
+          description: "altcha_hmackey set to template default 'Example key'"
+          query: >
+            ^\s*altcha_hmackey\s*=\s*['"]?Example key['"]?\s*$
+        - id: "P-CF-023-B"
+          description: "altcha_hmackey is empty"
+          query: >
+            ^\s*altcha_hmackey\s*=\s*["']{0,2}\s*["']{0,2}\s*$
+    insecure_example: |
+      [captcha]
+      altcha = on
+      altcha_hmackey = 'Example key'
+    secure_example: |
+      [captcha]
+      altcha = on
+      altcha_hmackey = 'a7f3c2d9e1b8f6240d5a4c7e9b2f3d1e8c4a7b0f2e5d3c1b9a6e8f4d2c0b7'
+      ; Use: php -r "echo bin2hex(random_bytes(32));"
+    false_positive_conditions:
+      - id: "FP-CF-023-A"
+        verdict: "N/A if altcha = off"
+        condition: >
+          altcha = off is configured — the HMAC key is unused. No alert should
+          be raised if ALTCHA is disabled (though check OJS-CF-021 for captcha
+          being disabled entirely).
+    remediation: >
+      Generate a unique, random ALTCHA HMAC key:
+        php -r "echo bin2hex(random_bytes(32)) . PHP_EOL;"
+      Set the generated value:
+        altcha_hmackey = 'your_64_char_hex_string'
+      The key should be at least 32 bytes (64 hex characters) of
+      cryptographically random data. Never use human-readable or memorable
+      phrases as the HMAC key.
+    references:
+      - "https://altcha.org/docs/server-side-integration/"
+      - "https://github.com/pkp/pkp-lib/blob/main/classes/captcha/AltchaManager\
+        .php"
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # OJS-CF-024 | CWE-284 | MEDIUM
+  # reCAPTCHA Hostname Enforcement Disabled — Token Reuse Across Sites
+  # ─────────────────────────────────────────────────────────────────────────────
+  - id: "OJS-CF-024"
+    name: "recaptcha_enforce_hostname = Off — reCAPTCHA Tokens May Be Reused
+      Cross-Site"
+    description: >
+      The 'recaptcha_enforce_hostname' directive controls whether OJS validates
+      that a submitted reCAPTCHA token was generated for the correct domain.
+      When set to Off, OJS accepts reCAPTCHA tokens that were generated on ANY
+      website using the same reCAPTCHA site key, including attacker-controlled
+      domains. This allows a CAPTCHA bypass attack: (1) An attacker registers on
+      a legitimate site that shares the same reCAPTCHA site key (or their own
+      test page using the same key). (2) They obtain a valid reCAPTCHA token.
+      (3) They replay this token in automated requests to the target OJS
+      instance. Without hostname enforcement, OJS verifies the token's signature
+      but not its intended domain, accepting it as valid. This effectively
+      nullifies reCAPTCHA protection for any site key that is registered for
+      multiple domains or whose key is known. Google's reCAPTCHA documentation
+      recommends enabling hostname verification for all production deployments.
+    severity: "MEDIUM"
+    category: "configuration"
+    subcategory: "authentication"
+    cwe: "CWE-284"
+    owasp: "A07:2021"
+    confidence: "HIGH"
+    config_section: "[captcha]"
+    config_key: "recaptcha_enforce_hostname"
+    related_cve: []
+    pattern_match:
+      type: "regex"
+      patterns:
+        - id: "P-CF-024-A"
+          description: "recaptcha_enforce_hostname explicitly disabled"
+          query: >
+            ^\s*recaptcha_enforce_hostname\s*=\s*[Oo][Ff][Ff]\s*$
+    insecure_example: |
+      [captcha]
+      recaptcha = on
+      recaptcha_enforce_hostname = Off
+    secure_example: |
+      [captcha]
+      recaptcha = on
+      recaptcha_enforce_hostname = On
+    false_positive_conditions:
+      - id: "FP-CF-024-A"
+        verdict: "N/A if recaptcha = off"
+        condition: >
+          reCAPTCHA is not enabled (recaptcha = off). The hostname enforcement
+          setting is irrelevant. No alert should be raised.
+    remediation: >
+      Enable hostname enforcement for reCAPTCHA:
+        recaptcha_enforce_hostname = On
+      Also ensure the reCAPTCHA site key is registered ONLY for the specific
+      domains of the OJS installation in the Google reCAPTCHA console. Avoid
+      sharing site keys across multiple OJS instances or domains.
+    references:
+      - "https://developers.google.com/recaptcha/docs/verify"
+      - "https://github.com/pkp/pkp-lib/blob/main/classes/captcha/ReCaptchaMana\
+        ger.php"
+
+  # ════════════════════════════════════════════════════════════════════════════════
+  # SECTION: [files]
+  # ════════════════════════════════════════════════════════════════════════════════
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # OJS-CF-025 | CWE-552 | HIGH
+  # files_dir Inside Web Root — Private Uploads Directly Web-Accessible
+  # ─────────────────────────────────────────────────────────────────────────────
+  - id: "OJS-CF-025"
+    name: "files_dir Potentially Web-Accessible — Private Manuscript Files Exposed"
+    description: >
+      The 'files_dir' directive in [files] specifies where OJS stores ALL
+      uploaded files including: manuscript submissions (possibly confidential
+      pre-print content), peer review documents, author correspondence, and
+      administrative files. The OJS configuration template explicitly states
+      this directory 'should not be directly web-accessible.' When files_dir is
+      set to a relative path (e.g., 'files') or an absolute path within the web
+      root (e.g., any path under /var/www/html/ or the Apache/nginx document
+      root), uploaded files may be directly accessible via HTTP URL without
+      authentication. This means: (1) Anyone who knows or guesses a file's
+      server path can download it directly, bypassing OJS's access control
+      (subscription checks, reviewer anonymity, author identity protection). (2)
+      If a PHP file is uploaded through a vulnerability, it can be executed via
+      direct HTTP access. (3) In OJS installations without proper .htaccess
+      protection, directory listing may expose all uploaded file paths. This is
+      a common misconfiguration in shared hosting environments.
+    severity: "HIGH"
+    category: "configuration"
+    subcategory: "access_control"
+    cwe: "CWE-552"
+    owasp: "A01:2021"
+    confidence: "MEDIUM"
+    config_section: "[files]"
+    config_key: "files_dir"
+    related_cve: []
+    pattern_match:
+      type: "regex"
+      patterns:
+        - id: "P-CF-025-A"
+          description: "files_dir set to unqualified relative path (default template value)"
+          query: >
+            ^\s*files_dir\s*=\s*files\s*$
+        - id: "P-CF-025-B"
+          description: "files_dir set to a path under common web roots"
+          query: >
+            ^\s*files_dir\s*=\s*(?:/var/www|/srv/www|/usr/share/nginx|/home/[^/]+/public_html|/htdocs|/www|/webroot)
+        - id: "P-CF-025-C"
+          description: "files_dir is a subdirectory of the OJS installation itself"
+          query: >
+            ^\s*files_dir\s*=\s*(?:\./|(?!/))[a-zA-Z0-9_\-/]+\s*$
+          note: >
+            Relative paths or paths that don't start with '/' are likely inside
+            the web root. Combine with web-server document root context for
+            definitive assessment.
+    insecure_example: |
+      [files]
+      files_dir = files
+      ; This creates an /ojs/files/ directory accessible at https://mysite.com/ojs/files/
+    secure_example: |
+      [files]
+      files_dir = /var/ojs-private-files
+      ; This is OUTSIDE the web root - not accessible via HTTP
+    false_positive_conditions:
+      - id: "FP-CF-025-A"
+        verdict: "SAFE if web server denies access to the directory"
+        condition: >
+          The files_dir is within the web root BUT the web server (Apache/nginx)
+          is configured to deny all HTTP access to the files directory. For
+          Apache: a .htaccess file with 'Require all denied' (Apache 2.4) or
+          'Order deny, allow / Deny from all' (Apache 2.2) is present. For
+          nginx: a location block with 'deny all' covers the files path. Both
+          configurations must be verified in the actual web server config, not
+          assumed.
+    remediation: >
+      Move files_dir to a location OUTSIDE the web server document root:
+        [files]
+        files_dir = /var/ojs-private-files
+      Create the directory with proper permissions:
+        mkdir -p /var/ojs-private-files
+        chown www-data:www-data /var/ojs-private-files
+        chmod 750 /var/ojs-private-files
+      If the directory must remain inside the web root, add protection:
+        Apache (.htaccess in files/): Require all denied
+        nginx: location /files/ { deny all; return 403; }
+      Verify no existing uploaded files are currently web-accessible by testing
+      a known file URL before and after applying the configuration change.
+    references:
+      - "https://docs.pkp.sfu.ca/admin-guide/en/deploy-production"
+      - "https://forum.pkp.sfu.ca/t/best-practices-securing-ojs/32156"
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # OJS-CF-026 | CWE-732 | MEDIUM
+  # Permissive File umask — Uploaded Files World-Readable/Writable
+  # ─────────────────────────────────────────────────────────────────────────────
+  - id: "OJS-CF-026"
+    name: "Permissive umask — Uploaded Files May Be World-Readable or World-Writable"
+    description: >
+      The 'umask' directive in [files] controls the permission mask applied to
+      files and directories created by OJS (uploaded manuscripts, cached files,
+      etc.). A permissive umask value means uploaded files are created with
+      overly broad permissions: umask=0000 creates files with 0666
+      (world-readable AND world-writable), and umask=0002 creates files with
+      0664 (group and world readable). On shared hosting environments, this
+      allows other users sharing the same server to read uploaded manuscript
+      files directly from the filesystem, bypassing OJS's access control
+      entirely. World-writable files (umask=0000) allow other server users to
+      modify or replace uploaded content. The recommended umask of 0022 creates
+      files as 0644 (owner read/write, group and others read-only), which is the
+      minimum necessary for the web server to serve public files while
+      restricting other users.
+    severity: "MEDIUM"
+    category: "configuration"
+    subcategory: "file_permissions"
+    cwe: "CWE-732"
+    owasp: "A01:2021"
+    confidence: "HIGH"
+    config_section: "[files]"
+    config_key: "umask"
+    related_cve: []
+    pattern_match:
+      type: "regex"
+      patterns:
+        - id: "P-CF-026-A"
+          description: "umask set to 0000 — all permissions granted (world-writable)"
+          query: >
+            ^\s*umask\s*=\s*0000\s*$
+        - id: "P-CF-026-B"
+          description: "umask set to 0002 — world-readable, group-writable"
+          query: >
+            ^\s*umask\s*=\s*0002\s*$
+        - id: "P-CF-026-C"
+          description: "umask set to 0111 — execute permissions but readable"
+          query: >
+            ^\s*umask\s*=\s*0111\s*$
+    insecure_example: |
+      [files]
+      umask = 0000
+    secure_example: |
+      [files]
+      umask = 0022
+      ; Creates files as 0644 (rw-r--r--) and directories as 0755 (rwxr-xr-x)
+    false_positive_conditions:
+      - id: "FP-CF-026-A"
+        verdict: "CONTEXT REQUIRED — dedicated server may tolerate 0002"
+        condition: >
+          On a dedicated server where all web server processes run under the
+          same OS user and group, umask=0002 (creating 0664 files) may be
+          acceptable if no other unprivileged users exist on the system. Verify
+          with 'id www-data' and 'ls -la /var/ojs-private-files' that group
+          membership is appropriately restricted.
+    remediation: >
+      Set umask to restrict file permissions:
+        [files]
+        umask = 0022
+      For maximum restriction on dedicated servers with private files_dir:
+        umask = 0027   ; Files: 0640 (owner r/w, group r, others none)
+      After changing umask, existing uploaded files retain their old
+      permissions. Fix existing files with:
+        find /var/ojs-private-files -type f -exec chmod 640 {} \;
+        find /var/ojs-private-files -type d -exec chmod 750 {} \;
+    references:
+      - "https://linux.die.net/man/2/umask"
+      - "https://docs.pkp.sfu.ca/admin-guide/en/deploy-production"
+
+  # ════════════════════════════════════════════════════════════════════════════════
+  # SECTION: [search]
+  # ════════════════════════════════════════════════════════════════════════════════
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # OJS-CF-027 | CWE-295 | MEDIUM
+  # OpenSearch SSL Verification Disabled — Search Index MitM Possible
+  # ─────────────────────────────────────────────────────────────────────────────
+  - id: "OJS-CF-027"
+    name: "opensearch_ssl_verification = Off — OpenSearch TLS Certificate Not
+      Verified"
+    description: >
+      When the OJS search driver is set to 'opensearch' and
+      'opensearch_ssl_verification = Off', OJS connects to the OpenSearch/
+      Elasticsearch cluster without verifying the server's TLS certificate. This
+      is the same class of vulnerability as smtp_suppress_cert_check (see
+      OJS-CF-020) applied to the search index connection. An attacker positioned
+      between OJS and the OpenSearch cluster (e.g., via ARP spoofing on the same
+      network, or by compromising network routing) can: (1) Intercept and read
+      all documents sent to the search index (including full manuscript text,
+      metadata, and author information). (2) Inject false search responses,
+      causing OJS to display manipulated search results. (3) Capture OpenSearch
+      authentication credentials if opensearch_username/password are configured.
+      On shared cloud or colocation environments, this is a realistic threat if
+      OJS and OpenSearch are on different hosts.
+    severity: "MEDIUM"
+    category: "configuration"
+    subcategory: "transport_security"
+    cwe: "CWE-295"
+    owasp: "A02:2021"
+    confidence: "HIGH"
+    config_section: "[search]"
+    config_key: "opensearch_ssl_verification"
+    related_cve: []
+    pattern_match:
+      type: "regex"
+      patterns:
+        - id: "P-CF-027-A"
+          description: "opensearch SSL verification explicitly disabled"
+          query: >
+            ^\s*opensearch_ssl_verification\s*=\s*[Oo][Ff][Ff]\s*$
+    insecure_example: |
+      [search]
+      driver = opensearch
+      opensearch_ssl_verification = Off
+    secure_example: |
+      [search]
+      driver = opensearch
+      opensearch_ssl_verification = On
+      ; Ensure OpenSearch has a valid TLS certificate from a trusted CA
+    false_positive_conditions:
+      - id: "FP-CF-027-A"
+        verdict: "LOWER RISK — OpenSearch on same host via localhost"
+        condition: >
+          opensearch_hosts is set to '["https://localhost:9200"]' AND OpenSearch
+          is confirmed to be on the same physical/virtual host as OJS, with no
+          network traversal. Localhost connections are not subject to
+          network-level MitM. However, certificate verification should still be
+          enabled using a locally-generated CA for defense-in-depth.
+    remediation: >
+      Enable SSL verification for the OpenSearch connection:
+        opensearch_ssl_verification = On
+      If using a self-signed certificate for OpenSearch, configure a custom CA:
+        opensearch_capath = /path/to/opensearch-ca.pem
+      For production deployments, use a certificate from a trusted CA (Let's
+      Encrypt or a commercial CA) for the OpenSearch endpoint. Reference the
+      OpenSearch security documentation for TLS configuration.
+    references:
+      - "https://opensearch.org/docs/latest/security/configuration/tls/"
+      - "https://docs.pkp.sfu.ca/admin-guide/en/deploy-search"
+
+  # ════════════════════════════════════════════════════════════════════════════════
+  # SECTION: [queues] / [schedule]
+  # ════════════════════════════════════════════════════════════════════════════════
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # OJS-CF-028 | CWE-400 | LOW
+  # Built-in Job Runner Enabled on High-Volume Sites — DoS Risk
+  # ─────────────────────────────────────────────────────────────────────────────
+  - id: "OJS-CF-028"
+    name: "job_runner = On — Built-in Job Runner Active (Performance/DoS Risk on
+      High-Volume Sites)"
+    description: >
+      The 'job_runner' directive in [queues] enables OJS's built-in job runner,
+      which processes queued background jobs at the end of EVERY web request.
+      While convenient for low-volume sites, this has security and stability
+      implications for production deployments: (1) Each web request may run
+      additional background jobs, increasing execution time and memory
+      consumption beyond what the HTTP client requested. (2) If
+      job_runner_max_execution_time is set higher than PHP's max_execution_time,
+      jobs will fail with timeouts that could leave the system in an
+      inconsistent state. (3) A malicious actor who can trigger mass email sends
+      or expensive operations may use the job queue as a DoS amplification
+      vector — each request triggers additional work beyond the HTTP response.
+      (4) Failed jobs accumulate in the database, and delete_failed_jobs_after
+      controls cleanup. The OJS template explicitly states this 'is highly
+      discouraged for high-volume sites' and recommends a dedicated worker
+      daemon or cron job instead.
+    severity: "LOW"
+    category: "configuration"
+    subcategory: "availability"
+    cwe: "CWE-400"
+    owasp: "A05:2021"
+    confidence: "LOW"
+    config_section: "[queues]"
+    config_key: "job_runner"
+    related_cve: []
+    pattern_match:
+      type: "regex"
+      patterns:
+        - id: "P-CF-028-A"
+          description: "job_runner enabled"
+          query: >
+            ^\s*job_runner\s*=\s*[Oo][Nn]\s*$
+    insecure_example: |
+      [queues]
+      job_runner = On
+      ; For high-volume production sites, this should be Off
+    secure_example: |
+      [queues]
+      job_runner = Off
+      ; Configure a cron job or worker daemon instead:
+      ; * * * * * php /path/to/ojs/lib/pkp/tools/jobs.php run >> /dev/null 2>&1
+    false_positive_conditions:
+      - id: "FP-CF-028-A"
+        verdict: "ACCEPTABLE — low-volume OJS deployments"
+        condition: >
+          The OJS instance serves fewer than ~50 submissions/month and the
+          job_runner_max_jobs and job_runner_max_execution_time limits are
+          configured conservatively (max_jobs <= 10, max_execution_time <= 15).
+          For small academic journals with limited traffic, the built-in runner
+          is acceptable. This is an informational finding for low-volume sites.
+    remediation: >
+      For production high-volume sites, disable the built-in job runner and
+      configure a cron job:
+        [queues]
+        job_runner = Off
+      Add a cron job (edit with: crontab -e):
+        * * * * * php /var/www/ojs/lib/pkp/tools/jobs.php run >> /dev/null 2>&1
+      Similarly disable the built-in task runner:
+        [schedule]
+        task_runner = Off
+      And add a cron job for scheduled tasks:
+        * * * * * php /var/www/ojs/lib/pkp/tools/scheduler.php run >> /dev/null 2>&1
+    references:
+      - "https://docs.pkp.sfu.ca/admin-guide/en/deploy-jobs"
+      - "https://docs.pkp.sfu.ca/admin-guide/en/deploy-scheduled-tasks"
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # OJS-CF-029 | CWE-613 | LOW
+  # Excessive Session Lifetime — Long-Duration Authentication Tokens
+  # ─────────────────────────────────────────────────────────────────────────────
+  - id: "OJS-CF-029"
+    name: "Excessive session_lifetime — Sessions Valid for More Than 30 Days"
+    description: >
+      The 'session_lifetime' directive in [general] specifies how many days a
+      'remember me' session cookie remains valid. Values greater than 30 days
+      extend the window during which a stolen session cookie can be used to
+      impersonate a user. For administrative accounts (Site Administrator,
+      Journal Manager), a 90-day or longer session lifetime means a single
+      session compromise event provides an attacker with persistent access for
+      months without triggering re-authentication. This compounds other session
+      security issues: a session stolen via XSS, network interception (if
+      force_ssl = Off), or device theft remains usable for an extended period.
+      The default value of 30 days is already liberal for sensitive accounts;
+      values exceeding 90 days should be flagged for review. Note: This setting
+      only applies when a user selects 'Remember me' at login — normal sessions
+      without 'remember me' are controlled by session_expire_on_close and PHP's
+      session.gc_maxlifetime.
+    severity: "LOW"
+    category: "configuration"
+    subcategory: "session_security"
+    cwe: "CWE-613"
+    owasp: "A07:2021"
+    confidence: "HIGH"
+    config_section: "[general]"
+    config_key: "session_lifetime"
+    related_cve: []
+    pattern_match:
+      type: "regex"
+      patterns:
+        - id: "P-CF-029-A"
+          description: "session_lifetime set to more than 90 days"
+          query: >
+            ^\s*session_lifetime\s*=\s*(?:9[1-9]|[1-9][0-9]{2,})\s*$
+        - id: "P-CF-029-B"
+          description: "session_lifetime set to a very large value (365+ days)"
+          query: >
+            ^\s*session_lifetime\s*=\s*(?:[3-9][6-9][5-9]|[4-9][0-9]{2}|[1-9][0-9]{3,})\s*$
+    insecure_example: |
+      [general]
+      session_lifetime = 365
+    secure_example: |
+      [general]
+      session_lifetime = 14
+      ; 14 days is recommended; use 0 to disable persistent sessions entirely
+    false_positive_conditions:
+      - id: "FP-CF-029-A"
+        verdict: "CONTEXT REQUIRED — balance usability vs. security"
+        condition: >
+          The OJS instance is an open-access journal with no subscription access
+          controls, and all users are unprivileged (author/reader roles only).
+          Longer session lifetimes have lower security impact when no privileged
+          operations are available. Still recommend reducing lifetime for
+          administrative accounts if role-based session lifetime control is
+          supported.
+    remediation: >
+      Reduce session_lifetime to an appropriate value:
+        [general]
+        session_lifetime = 14   ; 14 days for 'remember me' sessions
+      For high-security deployments, set to 1 day or use 0 to disable persistent
+      sessions (users must re-login each browser session):
+        session_lifetime = 0
+      Additionally enable session_expire_on_close = On and configure
+      session_check_ip = On to further reduce session hijacking impact.
+    references:
+      - "https://cheatsheetseries.owasp.org/cheatsheets/Session_Management_Chea\
+        t_Sheet.html"
+      - "https://pages.nist.gov/800-63-3/sp800-63b.html"
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # OJS-CF-030 | CWE-311 | LOW
+  # Session Does Not Expire on Browser Close
+  # ─────────────────────────────────────────────────────────────────────────────
+  - id: "OJS-CF-030"
+    name: "session_expire_on_close = Off — Session Persists After Browser Closure"
+    description: >
+      The 'session_expire_on_close' directive in [security] controls whether OJS
+      cookie-based sessions expire when the user closes their browser window.
+      When set to Off (the default), session cookies have an explicit expiry
+      date and are stored as persistent cookies by the browser. This means that
+      if a user authenticates on a shared or public computer without explicitly
+      logging out, the session cookie persists in the browser after they close
+      the tab/window, remaining accessible to the next person who uses that
+      browser. This is particularly risky in: (1) Library or internet cafe
+      computers where browsers may cache sessions. (2) Shared workstations in
+      academic or research environments (common in the academic publishing
+      context of OJS). (3) Environments where users may forget to log out.
+      Session-only cookies (those without an explicit expiry) are deleted by
+      browsers when all browser instances are closed, providing an automatic
+      logout mechanism for shared computer contexts.
+    severity: "LOW"
+    category: "configuration"
+    subcategory: "session_security"
+    cwe: "CWE-613"
+    owasp: "A07:2021"
+    confidence: "HIGH"
+    config_section: "[security]"
+    config_key: "session_expire_on_close"
+    related_cve: []
+    pattern_match:
+      type: "regex"
+      patterns:
+        - id: "P-CF-030-A"
+          description: "session_expire_on_close explicitly set to Off"
+          query: >
+            ^\s*session_expire_on_close\s*=\s*[Oo][Ff][Ff]\s*$
+    insecure_example: |
+      [security]
+      session_expire_on_close = Off
+    secure_example: |
+      [security]
+      session_expire_on_close = On
+    false_positive_conditions:
+      - id: "FP-CF-030-A"
+        verdict: "ACCEPTABLE — balance with usability requirements"
+        condition: >
+          The OJS serves a dedicated researcher community where shared computers
+          are not typical and users expect persistent sessions for convenience
+          (e.g., a single-institution deployment with personal workstations
+          only). Risk is acceptable with short session_lifetime values. Flag as
+          LOW with documentation.
+    remediation: >
+      Enable session expiry on browser close for enhanced security:
+        [security]
+        session_expire_on_close = On
+      Note: This disables the 'remember me' functionality since session cookies
+      will expire when the browser closes regardless of session_lifetime. If
+      'remember me' is required, keep session_expire_on_close = Off but
+      implement compensating controls: force_ssl = On, session_check_ip = On,
+      and a short password_timeout for administrative actions.
+    references:
+      - "https://cheatsheetseries.owasp.org/cheatsheets/Session_Management_Chea\
+        t_Sheet.html"
+      - "https://developer.mozilla.org/en-US/docs/Web/HTTP/Cookies#define_the_l\
+        ifetime_of_a_cookie"

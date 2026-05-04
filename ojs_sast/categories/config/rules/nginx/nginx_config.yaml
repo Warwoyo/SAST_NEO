@@ -1,0 +1,1948 @@
+rules:
+  # ==============================================================================
+  # OJS WEB SERVER (NGINX) SAST — SECURITY RULESET (v1.0)
+  # ==============================================================================
+  # Coverage   : 20 misconfiguration checks across 7 security domains
+  # Scope      : nginx.conf / OJS virtual-host configuration files
+  # Language   : English
+  # Pattern    : Regex (nginx directive syntax — directive value;)
+  # Author     : OJS Extended SAST Research — Web Server Configuration Module
+  # Standards  : CIS Nginx Benchmark v2.0.0 (2024), OWASP Top 10:2025 (A05),
+  #              NIST SP 800-44v2, OWASP Secure Headers Project (2024),
+  #              Mozilla SSL Configuration Generator (Modern/Intermediate, 2024),
+  #              RFC 6797 (HSTS), RFC 7034 (X-Frame-Options)
+  # Target     : Production OJS deployments — nginx virtual host config
+  # ==============================================================================
+  #
+  # RULE ID CONVENTION:
+  #   OJS-WS-[NNN] — OJS Web Server finding, sequential number
+  #
+  # SEVERITY LEVELS:
+  #   CRITICAL — Direct exploitation path; remote code execution or full
+  #              credential compromise with no authentication required
+  #   HIGH     — Significant security impact; exploitable under common real-world
+  #              conditions or enables well-documented attack chains
+  #   MEDIUM   — Moderate risk; increases attack surface, degrades security
+  #              posture, or enables attacks requiring additional prerequisites
+  #   LOW      — Defense-in-depth degradation; minor information leakage or
+  #              increases effort required for already-constrained attacks
+  #
+  # PATTERN SCOPE NOTES:
+  #   scope: "line"       — Match against individual lines of the nginx config.
+  #   scope: "block"      — Match against a directive block (multi-line context).
+  #   scope: "file"       — Presence/absence check across the entire config file.
+  #   Comments (#) are excluded from pattern matching on lines.
+  #   Patterns are applied case-insensitively unless noted.
+  #
+  # GROUND TRUTH MAPPING:
+  #   Each rule is mapped to at least one entry in the companion file
+  #   ojs_nginx_gt_dataset.json for evaluation of precision/recall/F1-score.
+  # ==============================================================================
+
+
+  # ════════════════════════════════════════════════════════════════════════════════
+  # DOMAIN 1: FILE UPLOAD & PHP EXECUTION CONTROL (OJS-Specific)
+  # ════════════════════════════════════════════════════════════════════════════════
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # OJS-WS-001 | CWE-434 | CRITICAL
+  # PHP Execution Not Blocked in OJS Files/Upload Directory
+  # ─────────────────────────────────────────────────────────────────────────────
+  - id: "OJS-WS-001"
+    name: "PHP Execution Not Disabled in OJS Upload/Files Directory"
+    description: >
+      OJS stores user-submitted files (galley files, submission files, review
+      attachments) under the 'files_dir' path configured in config.inc.php
+      (typically /var/www/ojs/files or a path outside the web root). However,
+      public-accessible directories such as /public and the configured file
+      serving paths may still be served by nginx. If the nginx PHP-FPM handler
+      (location ~ \.php$) applies globally to the entire server root without
+      explicitly denying PHP execution within the OJS files/public directories,
+      an attacker who can upload a file with a .php extension or exploit a path
+      traversal vulnerability (e.g., CVE-2025-67890) can achieve Remote Code
+      Execution (RCE). This is the single highest-severity nginx misconfiguration
+      for OJS deployments. The CIS Nginx Benchmark Section 4.1.14 requires that
+      PHP execution be prohibited in all user-controlled upload paths. NIST
+      SP 800-44v2 Section 6.2.4 similarly mandates that web-accessible
+      directories containing user data must not permit script execution.
+    severity: "CRITICAL"
+    category: "webserver_configuration"
+    subcategory: "file_upload_security"
+    cwe: "CWE-434"
+    owasp: "A05:2025"
+    confidence: "HIGH"
+    config_directive: "location ~ \\.php$"
+    standard_references:
+      - standard: "CIS Nginx Benchmark v2.0.0"
+        section: "Section 4.1.14 — Restrict PHP Execution in Upload Paths"
+        url: "https://www.cisecurity.org/benchmark/nginx"
+      - standard: "NIST SP 800-44v2"
+        section: "Section 6.2.4 — Restricting Script Execution in Upload Directories"
+        url: "https://csrc.nist.gov/publications/detail/sp/800-44/version-2/final"
+      - standard: "OWASP Top 10:2025"
+        section: "A05 — Security Misconfiguration"
+        url: "https://owasp.org/Top10/2025/A05_2025-Security_Misconfiguration/"
+      - standard: "Detectify Nginx Misconfiguration Research (2021)"
+        section: "PHP execution in upload directories — 50,000 config sample analysis"
+        url: "https://blog.detectify.com/industry-insights/common-nginx-misconfigurations-that-leave-your-web-server-ope-to-attack/"
+    related_cve:
+      - "CVE-2025-67890"
+    pattern_match:
+      type: "regex"
+      scope: "file"
+      patterns:
+        - id: "P-WS-001-A"
+          description: >
+            Global PHP handler is present, but no nested location block for
+            /files, /public, or upload directories denies PHP execution.
+            Detect the absence of 'location ~ /files' or 'location ~ /public'
+            blocks that contain 'return 403/404' or 'deny all'.
+          query: >
+            (?s)location\s+~\s+\\?\.php\$.*?\{.*?fastcgi_pass.*?\}
+          absence_check:
+            description: >
+              Verify that a deny or return 403/404 exists for PHP in /files
+              and /public sub-paths. If absent, the configuration is INSECURE.
+            patterns:
+              - >
+                location\s+(?:~\s+|=\s+)?['""]?(?:/files|/public)['""]?\s*\{[^}]*(?:return\s+(?:403|404)|deny\s+all)[^}]*location\s+~\s+\\?\.php
+              - >
+                location\s+(?:~\s+)?\\?\.php[^\{]*\{[^}]*deny\s+all[^}]*\}
+    insecure_example: |
+      server {
+          root /var/www/ojs;
+          location ~ \.php$ {
+              fastcgi_pass 127.0.0.1:9000;
+              fastcgi_param SCRIPT_FILENAME $document_root$fastcgi_script_name;
+              include fastcgi_params;
+          }
+          # INSECURE: No restriction on PHP execution in /files or /public
+      }
+    secure_example: |
+      server {
+          root /var/www/ojs;
+          # Deny PHP execution in OJS user-controlled directories
+          location ~ ^/(files|public)/ {
+              location ~ \.php$ {
+                  return 403;
+              }
+          }
+          # PHP handler for application code only
+          location ~ \.php$ {
+              try_files $uri =404;
+              fastcgi_pass 127.0.0.1:9000;
+              fastcgi_param SCRIPT_FILENAME $document_root$fastcgi_script_name;
+              include fastcgi_params;
+          }
+      }
+    false_positive_conditions:
+      - id: "FP-WS-001-A"
+        verdict: "SAFE — suppress alert"
+        condition: >
+          The OJS 'files_dir' is configured to a path completely outside the
+          nginx document root (e.g., /var/ojs-files, not within /var/www/ojs)
+          AND the /public directory has a nested location block that returns 403
+          for any PHP file requests. In this case, even without an explicit
+          /files restriction, no user-uploaded PHP files are web-accessible.
+      - id: "FP-WS-001-B"
+        verdict: "REVIEW NEEDED — verify files_dir path"
+        condition: >
+          The nginx config uses 'alias' or 'root' overrides inside specific
+          location blocks that redirect /files requests to a path outside the
+          web root. Manual review of alias path resolution is required to confirm
+          that no PHP execution is possible.
+    remediation: >
+      Add explicit deny blocks for PHP execution in all OJS user-controlled paths:
+
+        location ~ ^/(files|public)/ {
+            location ~ \.php$ {
+                return 403;
+            }
+        }
+
+      Additionally, consider moving the OJS 'files_dir' completely outside the
+      nginx document root by setting in config.inc.php:
+        [files]
+        files_dir = /var/ojs-private-files
+
+      This ensures uploaded files are never served directly by nginx.
+    references:
+      - "https://docs.pkp.sfu.ca/admin-guide/en/deploy-server"
+      - "https://nginx.org/en/docs/http/ngx_http_core_module.html#location"
+      - "https://www.cisecurity.org/benchmark/nginx"
+
+
+  # ════════════════════════════════════════════════════════════════════════════════
+  # DOMAIN 2: SENSITIVE FILE EXPOSURE
+  # ════════════════════════════════════════════════════════════════════════════════
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # OJS-WS-002 | CWE-538 | CRITICAL
+  # OJS config.inc.php Not Protected from Web Access
+  # ─────────────────────────────────────────────────────────────────────────────
+  - id: "OJS-WS-002"
+    name: "OJS config.inc.php Not Protected — Database Credentials Exposed"
+    description: >
+      OJS stores all critical credentials in config.inc.php: database host,
+      username, password, the application encryption key (app_key), and SMTP
+      credentials. If nginx does not explicitly block web access to this file,
+      any HTTP client can retrieve its full contents directly
+      (e.g., https://journal.example.org/config.inc.php), exposing credentials
+      that grant full database access, allow session forgery, and may enable
+      direct server compromise. This constitutes a CWE-538 (Inclusion of
+      Sensitive Information in Publicly Accessible Files) finding. The CIS Nginx
+      Benchmark Section 4.1.6 requires that sensitive application configuration
+      files be explicitly denied via location directives. NIST SP 800-44v2
+      Section 7.1 classifies exposure of server configuration files as a
+      critical vulnerability. This rule also covers related OJS-sensitive paths:
+      .env files, .htaccess files, and the registry/ directory.
+    severity: "CRITICAL"
+    category: "webserver_configuration"
+    subcategory: "sensitive_file_exposure"
+    cwe: "CWE-538"
+    owasp: "A05:2025"
+    confidence: "HIGH"
+    config_directive: "location ~ /config\\.inc\\.php"
+    standard_references:
+      - standard: "CIS Nginx Benchmark v2.0.0"
+        section: "Section 4.1.6 — Deny Access to Sensitive Application Files"
+        url: "https://www.cisecurity.org/benchmark/nginx"
+      - standard: "NIST SP 800-44v2"
+        section: "Section 7.1 — Protecting Web Server Configuration Files"
+        url: "https://csrc.nist.gov/publications/detail/sp/800-44/version-2/final"
+      - standard: "PKP Security Advisory"
+        section: "OJS Configuration File Protection Requirements"
+        url: "https://docs.pkp.sfu.ca/admin-guide/en/deploy-security"
+    related_cve:
+      - "CVE-2022-26616"
+    pattern_match:
+      type: "regex"
+      scope: "file"
+      patterns:
+        - id: "P-WS-002-A"
+          description: >
+            Absence check: No location block exists that explicitly denies
+            access to config.inc.php.
+          query: >
+            ^(?![\s\S]*location\s+[~=*]+\s+['""]?(?:.*)?config(?:\.inc)?\.php['""]?\s*\{[\s\S]*?(?:deny\s+all|return\s+(?:403|404)))[\s\S]*$
+          note: "Run as full-file absence check"
+        - id: "P-WS-002-B"
+          description: >
+            Absence check: No location block denies access to .env, .git,
+            or hidden dot-files that may expose secrets.
+          query: >
+            ^(?![\s\S]*location\s+~\s+['""]?(?:\\\/\.|\\/\.)(?:env|git|htaccess|svn)['""]?\s*\{[\s\S]*?(?:deny\s+all|return\s+(?:403|404)))[\s\S]*$
+          note: "Run as full-file absence check"
+    insecure_example: |
+      server {
+          server_name journal.example.org;
+          root /var/www/ojs;
+          # INSECURE: No restriction on access to config.inc.php
+          # An attacker can GET /config.inc.php and retrieve all credentials.
+          location ~ \.php$ {
+              fastcgi_pass 127.0.0.1:9000;
+              include fastcgi_params;
+          }
+      }
+    secure_example: |
+      server {
+          server_name journal.example.org;
+          root /var/www/ojs;
+          # Block access to OJS sensitive files
+          location ~ ^/(config\.inc\.php|config\.php) {
+              deny all;
+              return 404;
+          }
+          # Block all hidden files and directories
+          location ~ /\. {
+              deny all;
+              return 404;
+          }
+          # Block OJS internal directories
+          location ~ ^/(lib|classes|cache|registry|plugins/[^/]+/[^/]*\.php) {
+              deny all;
+              return 404;
+          }
+      }
+    false_positive_conditions:
+      - id: "FP-WS-002-A"
+        verdict: "SAFE — suppress if OJS root is not in nginx document root"
+        condition: >
+          The nginx document root is set to /var/www/ojs/public_html or
+          similar, and config.inc.php is stored one directory level above
+          (outside the web root). In this case, the file is not web-accessible
+          by default, and no explicit deny block is needed.
+    remediation: >
+      Add explicit deny rules for OJS-sensitive files and directories:
+
+        # In your OJS nginx server block:
+        location ~ ^/(config\.inc\.php|config\.php|\.env) {
+            deny all;
+            return 404;
+        }
+        location ~ /\.(ht|git|svn|env|config) {
+            deny all;
+            return 404;
+        }
+        location ~ ^/(lib|classes|cache|locale|registry|templates|styles)/ {
+            deny all;
+            return 404;
+        }
+    references:
+      - "https://docs.pkp.sfu.ca/admin-guide/en/deploy-security"
+      - "https://nginx.org/en/docs/http/ngx_http_access_module.html"
+
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # OJS-WS-003 | CWE-538 | HIGH
+  # OJS /lib or /classes Directory Web-Accessible
+  # ─────────────────────────────────────────────────────────────────────────────
+  - id: "OJS-WS-003"
+    name: "OJS Internal Directories (/lib, /classes) Not Protected from Web Access"
+    description: >
+      The OJS /lib directory (containing PKP library code) and /classes
+      directory (containing application classes) should never be directly
+      accessible via HTTP. While PHP files in these directories cannot normally
+      be executed directly without being called through the OJS bootstrap,
+      exposing these directories allows attackers to enumerate the OJS version,
+      framework structure, and available plugins — significantly aiding
+      targeted attack research. Additionally, any non-PHP files (configuration
+      templates, locale files, documentation) within these directories may
+      contain sensitive structural information. The Detectify 2021 study of
+      50,000 nginx configurations found that 34% of PHP applications failed to
+      block access to framework internal directories. This is consistent with
+      the CIS Nginx Benchmark requirement (Section 4.1.5) to deny access to
+      application framework directories.
+    severity: "HIGH"
+    category: "webserver_configuration"
+    subcategory: "sensitive_file_exposure"
+    cwe: "CWE-538"
+    owasp: "A05:2025"
+    confidence: "MEDIUM"
+    config_directive: "location ~ ^/lib"
+    standard_references:
+      - standard: "CIS Nginx Benchmark v2.0.0"
+        section: "Section 4.1.5 — Restrict Access to Framework Internal Directories"
+        url: "https://www.cisecurity.org/benchmark/nginx"
+      - standard: "Detectify Nginx Misconfiguration Research (2021)"
+        section: "Framework directory exposure in 50,000 nginx config analysis"
+        url: "https://blog.detectify.com/industry-insights/common-nginx-misconfigurations-that-leave-your-web-server-ope-to-attack/"
+      - standard: "OWASP Top 10:2025"
+        section: "A05 — Security Misconfiguration"
+        url: "https://owasp.org/Top10/2025/A05_2025-Security_Misconfiguration/"
+    related_cve: []
+    pattern_match:
+      type: "regex"
+      scope: "file"
+      patterns:
+        - id: "P-WS-003-A"
+          description: >
+            Absence check: No location block denies access to OJS /lib,
+            /classes, /cache, /locale, /registry, or /templates directories.
+          query: >
+            ^(?![\s\S]*location\s+~\s+['""]?\^?\/(?:lib|classes|cache|locale|registry|templates)['""]?\s*\{[\s\S]*?(?:deny\s+all|return\s+(?:403|404)))[\s\S]*$
+          note: "Run as full-file absence check"
+    insecure_example: |
+      server {
+          root /var/www/ojs;
+          # INSECURE: /lib, /classes, /templates directories are freely browsable
+          location / {
+              try_files $uri $uri/ /index.php?$query_string;
+          }
+      }
+    secure_example: |
+      server {
+          root /var/www/ojs;
+          # Block OJS internal framework directories
+          location ~ ^/(lib|classes|cache|locale|registry|templates|styles|plugins)/ {
+              location ~ \.php$ {
+                  deny all;
+                  return 404;
+              }
+              # Allow static assets (CSS, JS) but not PHP
+          }
+          # Fully block non-public directories
+          location ~ ^/(lib|classes|cache|locale|registry)/ {
+              deny all;
+              return 404;
+          }
+          location / {
+              try_files $uri $uri/ /index.php?$query_string;
+          }
+      }
+    false_positive_conditions:
+      - id: "FP-WS-003-A"
+        verdict: "SAFE — if OJS web root is a dedicated public subdirectory"
+        condition: >
+          The nginx document root points to a dedicated /public_html or
+          /webroot subdirectory inside the OJS installation, where only
+          index.php and public assets exist. In this layout, /lib, /classes,
+          etc., are outside the web root and thus inaccessible. Verify the
+          'root' directive path relative to OJS installation structure.
+    remediation: >
+      Add a blanket deny rule for OJS non-public directories before the
+      main location block:
+
+        location ~ ^/(lib|classes|cache|locale|registry|templates)/ {
+            deny all;
+            return 404;
+        }
+
+      Alternatively, restructure the OJS nginx root to point to the
+      OJS /public_html directory if one exists, isolating all framework
+      internals from web access by default.
+    references:
+      - "https://docs.pkp.sfu.ca/admin-guide/en/deploy-server"
+      - "https://nginx.org/en/docs/http/ngx_http_access_module.html"
+
+
+  # ════════════════════════════════════════════════════════════════════════════════
+  # DOMAIN 3: TLS / SSL CONFIGURATION
+  # ════════════════════════════════════════════════════════════════════════════════
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # OJS-WS-004 | CWE-326 | CRITICAL
+  # Deprecated SSL/TLS Protocol Versions Enabled
+  # ─────────────────────────────────────────────────────────────────────────────
+  - id: "OJS-WS-004"
+    name: "Deprecated TLS Protocols Enabled (SSLv2, SSLv3, TLS 1.0, TLS 1.1)"
+    description: >
+      The 'ssl_protocols' directive in nginx controls which TLS/SSL protocol
+      versions the server accepts. Enabling SSLv2, SSLv3, TLS 1.0, or TLS 1.1
+      exposes the server and its clients to a range of well-documented
+      cryptographic attacks: SSLv2 is vulnerable to DROWN (CVE-2016-0800);
+      SSLv3 is vulnerable to POODLE (CVE-2014-3566); TLS 1.0 is vulnerable to
+      BEAST (CVE-2011-3389) and has been deprecated by RFC 8996 (2021) and
+      PCI DSS 4.0. TLS 1.1 is also deprecated by RFC 8996. The Mozilla SSL
+      Configuration Generator (Intermediate profile) mandates a minimum of
+      TLS 1.2, while the Modern profile requires TLS 1.3 only. The CIS Nginx
+      Benchmark Section 4.3.2 explicitly requires 'ssl_protocols TLSv1.2
+      TLSv1.3' as the minimum acceptable configuration. For OJS, which handles
+      authenticated editorial workflows and potentially sensitive manuscript
+      data, strong TLS is a compliance requirement.
+    severity: "CRITICAL"
+    category: "webserver_configuration"
+    subcategory: "cryptographic_configuration"
+    cwe: "CWE-326"
+    owasp: "A02:2021"
+    confidence: "HIGH"
+    config_directive: "ssl_protocols"
+    standard_references:
+      - standard: "CIS Nginx Benchmark v2.0.0"
+        section: "Section 4.3.2 — Ensure TLSv1.2 and TLSv1.3 are the Minimum"
+        url: "https://www.cisecurity.org/benchmark/nginx"
+      - standard: "RFC 8996 (IETF, 2021)"
+        section: "Deprecating TLS 1.0 and TLS 1.1"
+        url: "https://datatracker.ietf.org/doc/html/rfc8996"
+      - standard: "Mozilla SSL Configuration Generator (Intermediate, 2024)"
+        section: "ssl_protocols TLSv1.2 TLSv1.3"
+        url: "https://ssl-config.mozilla.org/"
+      - standard: "PCI DSS v4.0"
+        section: "Requirement 4.2.1 — Strong Cryptography in Transit"
+        url: "https://www.pcisecuritystandards.org/"
+    related_cve:
+      - "CVE-2014-3566"
+      - "CVE-2016-0800"
+      - "CVE-2011-3389"
+    pattern_match:
+      type: "regex"
+      scope: "line"
+      patterns:
+        - id: "P-WS-004-A"
+          description: "SSLv2 explicitly listed in ssl_protocols"
+          query: >
+            ^\s*ssl_protocols\s+.*\bSSLv2\b
+        - id: "P-WS-004-B"
+          description: "SSLv3 explicitly listed in ssl_protocols"
+          query: >
+            ^\s*ssl_protocols\s+.*\bSSLv3\b
+        - id: "P-WS-004-C"
+          description: "TLS 1.0 explicitly listed in ssl_protocols"
+          query: >
+            ^\s*ssl_protocols\s+.*\bTLSv1\b(?!\.[23])
+        - id: "P-WS-004-D"
+          description: "TLS 1.1 explicitly listed in ssl_protocols"
+          query: >
+            ^\s*ssl_protocols\s+.*\bTLSv1\.1\b
+    insecure_example: |
+      server {
+          ssl_protocols SSLv3 TLSv1 TLSv1.1 TLSv1.2;
+          # INSECURE: SSLv3 (POODLE), TLS 1.0 (BEAST), TLS 1.1 (deprecated)
+      }
+    secure_example: |
+      server {
+          ssl_protocols TLSv1.2 TLSv1.3;
+          # Modern profile (TLS 1.3 only):
+          # ssl_protocols TLSv1.3;
+      }
+    false_positive_conditions:
+      - id: "FP-WS-004-A"
+        verdict: "CONTEXT REQUIRED — legacy client compatibility"
+        condition: >
+          The OJS instance must support very old browsers or clients (e.g.,
+          Windows XP with IE8) and TLS 1.0 cannot be avoided. This is an
+          accepted risk that must be documented and reviewed annually per
+          PCI DSS requirements. Even in this case, SSLv2 and SSLv3 should
+          still be disabled — only TLS 1.0 might be conditionally acceptable.
+    remediation: >
+      Update ssl_protocols to allow only modern TLS versions:
+
+        ssl_protocols TLSv1.2 TLSv1.3;
+
+      Also apply matching cipher suite restrictions (see OJS-WS-020).
+      Consider implementing HSTS (see OJS-WS-008) to prevent protocol
+      downgrade attacks via HTTP fallback.
+    references:
+      - "https://ssl-config.mozilla.org/"
+      - "https://datatracker.ietf.org/doc/html/rfc8996"
+      - "https://www.cisecurity.org/benchmark/nginx"
+
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # OJS-WS-005 | CWE-327 | HIGH
+  # Weak or Broken SSL Cipher Suites Enabled
+  # ─────────────────────────────────────────────────────────────────────────────
+  - id: "OJS-WS-005"
+    name: "Weak SSL Cipher Suites Enabled (RC4, DES, NULL, EXPORT, MD5)"
+    description: >
+      The 'ssl_ciphers' directive specifies which cipher suites nginx accepts
+      during the TLS handshake. Cipher suites using RC4 (broken stream cipher),
+      DES/3DES (short key length, vulnerable to SWEET32 — CVE-2016-2183),
+      NULL encryption, EXPORT-grade ciphers (deliberately weakened for US export
+      law compliance, exploited by FREAK — CVE-2015-0204 and Logjam —
+      CVE-2015-4000), anonymous DH (no authentication), or MD5 HMAC (collision
+      vulnerabilities) are cryptographically broken and should not be used. The
+      CIS Nginx Benchmark Section 4.3.3 provides a prescriptive recommended
+      cipher suite list that excludes all such weaknesses. The Mozilla SSL
+      Configuration Generator Intermediate profile mandates a modern cipher
+      list that achieves PFS (Perfect Forward Secrecy) for all connections.
+    severity: "HIGH"
+    category: "webserver_configuration"
+    subcategory: "cryptographic_configuration"
+    cwe: "CWE-327"
+    owasp: "A02:2021"
+    confidence: "HIGH"
+    config_directive: "ssl_ciphers"
+    standard_references:
+      - standard: "CIS Nginx Benchmark v2.0.0"
+        section: "Section 4.3.3 — Ensure Strong TLS Cipher Suites Are Used"
+        url: "https://www.cisecurity.org/benchmark/nginx"
+      - standard: "Mozilla SSL Configuration Generator (Intermediate, 2024)"
+        section: "ssl_ciphers — Recommended cipher list"
+        url: "https://ssl-config.mozilla.org/"
+      - standard: "NIST SP 800-52r2"
+        section: "Section 3.3 — TLS Cipher Suite Guidance"
+        url: "https://nvlpubs.nist.gov/nistpubs/SpecialPublications/NIST.SP.800-52r2.pdf"
+    related_cve:
+      - "CVE-2016-2183"
+      - "CVE-2015-0204"
+      - "CVE-2015-4000"
+    pattern_match:
+      type: "regex"
+      scope: "line"
+      patterns:
+        - id: "P-WS-005-A"
+          description: "RC4 cipher included in ssl_ciphers"
+          query: >
+            ^\s*ssl_ciphers\s+.*\bRC4\b
+        - id: "P-WS-005-B"
+          description: "DES or 3DES cipher included in ssl_ciphers"
+          query: >
+            ^\s*ssl_ciphers\s+.*\b(?:DES|3DES|DES-CBC3|DES-CBC)\b
+        - id: "P-WS-005-C"
+          description: "NULL, EXPORT, or anonymous ciphers included"
+          query: >
+            ^\s*ssl_ciphers\s+.*\b(?:NULL|EXPORT|aNULL|eNULL|ADH|AECDH)\b
+        - id: "P-WS-005-D"
+          description: "MD5 HMAC cipher suites included"
+          query: >
+            ^\s*ssl_ciphers\s+.*\bMD5\b
+        - id: "P-WS-005-E"
+          description: "Wildcard 'ALL' or 'HIGH' without exclusions — may include weak ciphers"
+          query: >
+            ^\s*ssl_ciphers\s+["']?(?:ALL|HIGH)["']?\s*;
+          note: >
+            LOW CONFIDENCE — 'HIGH' alone may still include weak ciphers.
+            Flag for manual review if no exclusion list follows.
+    insecure_example: |
+      server {
+          ssl_ciphers HIGH:!aNULL:!MD5:RC4;
+          # INSECURE: RC4 is a broken stream cipher
+      }
+    secure_example: |
+      server {
+          # Mozilla Intermediate profile (2024):
+          ssl_ciphers ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-ECDSA-CHACHA20-POLY1305:ECDHE-RSA-CHACHA20-POLY1305:DHE-RSA-AES128-GCM-SHA256:DHE-RSA-AES256-GCM-SHA384:DHE-RSA-CHACHA20-POLY1305;
+          ssl_prefer_server_ciphers off;
+      }
+    false_positive_conditions:
+      - id: "FP-WS-005-A"
+        verdict: "SAFE — if subsequent exclusions neutralize the weak cipher"
+        condition: >
+          The ssl_ciphers directive uses OpenSSL string notation where a weak
+          cipher keyword appears only as a negative exclusion (e.g.,
+          '!RC4', '!MD5', '!NULL', '!EXPORT'). In this case the cipher is
+          being excluded, not included — suppress the alert.
+    remediation: >
+      Replace ssl_ciphers with the Mozilla Intermediate cipher list:
+
+        ssl_ciphers ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:\
+          ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:\
+          ECDHE-ECDSA-CHACHA20-POLY1305:ECDHE-RSA-CHACHA20-POLY1305:\
+          DHE-RSA-AES128-GCM-SHA256:DHE-RSA-AES256-GCM-SHA384;
+        ssl_prefer_server_ciphers off;
+
+      Generate a Diffie-Hellman parameter file for DHE suites:
+        openssl dhparam -out /etc/nginx/dhparam.pem 2048
+        ssl_dhparam /etc/nginx/dhparam.pem;
+    references:
+      - "https://ssl-config.mozilla.org/"
+      - "https://www.cisecurity.org/benchmark/nginx"
+      - "https://nvlpubs.nist.gov/nistpubs/SpecialPublications/NIST.SP.800-52r2.pdf"
+
+
+  # ════════════════════════════════════════════════════════════════════════════════
+  # DOMAIN 4: INFORMATION DISCLOSURE
+  # ════════════════════════════════════════════════════════════════════════════════
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # OJS-WS-006 | CWE-200 | HIGH
+  # server_tokens Directive Not Disabled — nginx Version Disclosed
+  # ─────────────────────────────────────────────────────────────────────────────
+  - id: "OJS-WS-006"
+    name: "server_tokens Not Disabled — nginx Version Disclosed in HTTP Headers"
+    description: >
+      The 'server_tokens' directive controls whether nginx includes its version
+      number in the 'Server' HTTP response header and in server-generated error
+      pages (e.g., '404 Not Found' pages). When enabled (the nginx default),
+      responses include a header such as 'Server: nginx/1.18.0 (Ubuntu)',
+      revealing the exact nginx version. This enables an attacker to identify
+      whether the server is running a version known to be vulnerable to
+      unpatched CVEs, significantly reducing the reconnaissance effort required
+      for a targeted attack. This is classified as CWE-200 (Exposure of
+      Sensitive Information to an Unauthorized Actor) and is addressed by
+      CIS Nginx Benchmark Section 2.1.2 (Ensure server_tokens Is Set to 'off').
+      NIST SP 800-44v2 Section 6.2 classifies server version disclosure as an
+      informational vulnerability requiring remediation in hardened environments.
+      100% of OJS production deployments should set server_tokens off.
+    severity: "HIGH"
+    category: "webserver_configuration"
+    subcategory: "information_disclosure"
+    cwe: "CWE-200"
+    owasp: "A05:2025"
+    confidence: "HIGH"
+    config_directive: "server_tokens"
+    standard_references:
+      - standard: "CIS Nginx Benchmark v2.0.0"
+        section: "Section 2.1.2 — Ensure server_tokens Is Set to off"
+        url: "https://www.cisecurity.org/benchmark/nginx"
+      - standard: "NIST SP 800-44v2"
+        section: "Section 6.2 — Web Server Configuration — Version Disclosure"
+        url: "https://csrc.nist.gov/publications/detail/sp/800-44/version-2/final"
+      - standard: "OWASP Top 10:2025"
+        section: "A05 — Security Misconfiguration"
+        url: "https://owasp.org/Top10/2025/A05_2025-Security_Misconfiguration/"
+    related_cve: []
+    pattern_match:
+      type: "regex"
+      scope: "file"
+      patterns:
+        - id: "P-WS-006-A"
+          description: "server_tokens explicitly set to 'on'"
+          query: >
+            ^\s*server_tokens\s+on\s*;
+        - id: "P-WS-006-B"
+          description: >
+            server_tokens absent from configuration (nginx default is 'on').
+            Run as absence check across the entire config file.
+          query: >
+            ^(?![\s\S]*server_tokens\s+off)[\s\S]*$
+          note: "Absence detection — run as full-file check"
+    insecure_example: |
+      http {
+          server_tokens on;   # INSECURE: discloses nginx version
+          # or simply absent — default is 'on'
+      }
+    secure_example: |
+      http {
+          server_tokens off;   # Hides nginx version from Server header and error pages
+      }
+    false_positive_conditions:
+      - id: "FP-WS-006-A"
+        verdict: "SAFE — if server_tokens is set to 'build' or 'off'"
+        condition: >
+          'server_tokens build' (nginx commercial plus) or 'server_tokens off'
+          are both acceptable secure configurations. The 'build' value omits
+          the version number. Suppress alerts for either value.
+    remediation: >
+      Add to the http{} block in nginx.conf:
+
+        http {
+            server_tokens off;
+        }
+
+      Additionally, consider setting a custom Server header to further
+      obscure the web server identity (requires nginx-more or headers-more
+      module):
+        more_set_headers 'Server: webserver';
+    references:
+      - "https://nginx.org/en/docs/http/ngx_http_core_module.html#server_tokens"
+      - "https://www.cisecurity.org/benchmark/nginx"
+
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # OJS-WS-007 | CWE-548 | HIGH
+  # Directory Listing (autoindex) Enabled
+  # ─────────────────────────────────────────────────────────────────────────────
+  - id: "OJS-WS-007"
+    name: "Directory Listing (autoindex) Enabled — File Enumeration Risk"
+    description: >
+      The 'autoindex' directive in nginx enables automatic directory listing
+      when no index file is present in a requested directory. When enabled,
+      an attacker browsing to a directory URL (e.g., /files/, /uploads/,
+      /plugins/) will receive a full listing of all files in that directory.
+      For OJS, this can expose: submitted manuscript files, peer reviewer
+      reports, editorial decisions, plugin source code, or cached data.
+      This is classified as CWE-548 (Exposure of Information Through Directory
+      Listing). The CIS Nginx Benchmark Section 2.5.1 requires that autoindex
+      be explicitly disabled. The nginx default is 'off', but if the parent
+      block or http block explicitly enables it, all child location blocks
+      inherit this setting unless overridden. NIST SP 800-44v2 Section 6.2.3
+      classifies directory listing as a medium-severity misconfiguration
+      requiring immediate remediation in all production deployments.
+    severity: "HIGH"
+    category: "webserver_configuration"
+    subcategory: "information_disclosure"
+    cwe: "CWE-548"
+    owasp: "A05:2025"
+    confidence: "HIGH"
+    config_directive: "autoindex"
+    standard_references:
+      - standard: "CIS Nginx Benchmark v2.0.0"
+        section: "Section 2.5.1 — Ensure autoindex Is Disabled"
+        url: "https://www.cisecurity.org/benchmark/nginx"
+      - standard: "NIST SP 800-44v2"
+        section: "Section 6.2.3 — Disabling Directory Listing"
+        url: "https://csrc.nist.gov/publications/detail/sp/800-44/version-2/final"
+    related_cve: []
+    pattern_match:
+      type: "regex"
+      scope: "line"
+      patterns:
+        - id: "P-WS-007-A"
+          description: "autoindex explicitly enabled"
+          query: >
+            ^\s*autoindex\s+on\s*;
+    insecure_example: |
+      server {
+          root /var/www/ojs;
+          autoindex on;   # INSECURE: enables full directory listings
+      }
+    secure_example: |
+      server {
+          root /var/www/ojs;
+          autoindex off;   # Explicitly disabled (also the nginx default)
+      }
+    false_positive_conditions:
+      - id: "FP-WS-007-A"
+        verdict: "CONTEXT REQUIRED — if inside a non-sensitive internal location"
+        condition: >
+          If autoindex on appears only within a location block that is
+          already behind IP-based access control (e.g., 'allow 127.0.0.1;
+          deny all;'), the risk is significantly reduced. Flag as LOW with
+          a note to verify access control coverage.
+    remediation: >
+      Ensure autoindex is off in all server and location blocks:
+
+        http {
+            autoindex off;   # Global default
+        }
+        server {
+            autoindex off;   # Redundant but explicit
+        }
+    references:
+      - "https://nginx.org/en/docs/http/ngx_http_autoindex_module.html"
+      - "https://www.cisecurity.org/benchmark/nginx"
+
+
+  # ════════════════════════════════════════════════════════════════════════════════
+  # DOMAIN 5: SECURITY HEADERS
+  # ════════════════════════════════════════════════════════════════════════════════
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # OJS-WS-008 | CWE-319 | HIGH
+  # Missing HTTP Strict Transport Security (HSTS) Header
+  # ─────────────────────────────────────────────────────────────────────────────
+  - id: "OJS-WS-008"
+    name: "Missing Strict-Transport-Security Header — HTTPS Not Enforced by Browser"
+    description: >
+      HTTP Strict Transport Security (HSTS), defined in RFC 6797, instructs
+      browsers to only connect to the server over HTTPS for a specified
+      duration. Without HSTS, even servers that redirect all HTTP to HTTPS
+      remain vulnerable to SSL stripping attacks, where an active MITM attacker
+      intercepts the initial HTTP connection before the redirect can occur.
+      For OJS, this is particularly critical because: (1) editorial login
+      credentials transmitted over HTTP can be captured; (2) session cookies
+      without the 'Secure' flag may be sent over HTTP if HSTS is absent;
+      (3) admin workflows involving password reset links may be interceptable.
+      The OWASP Secure Headers Project (2024) lists HSTS as a Required header.
+      The CIS Nginx Benchmark Section 4.3.7 mandates HSTS with a minimum
+      max-age of 15768000 seconds (6 months). RFC 6797 recommends including
+      'includeSubDomains' to protect all subdomains.
+    severity: "HIGH"
+    category: "webserver_configuration"
+    subcategory: "transport_security"
+    cwe: "CWE-319"
+    owasp: "A05:2025"
+    confidence: "HIGH"
+    config_directive: "add_header Strict-Transport-Security"
+    standard_references:
+      - standard: "RFC 6797 (IETF, 2012)"
+        section: "HTTP Strict Transport Security (HSTS) Specification"
+        url: "https://datatracker.ietf.org/doc/html/rfc6797"
+      - standard: "CIS Nginx Benchmark v2.0.0"
+        section: "Section 4.3.7 — Ensure HSTS Header Is Configured"
+        url: "https://www.cisecurity.org/benchmark/nginx"
+      - standard: "OWASP Secure Headers Project (2024)"
+        section: "Strict-Transport-Security — Required Header"
+        url: "https://owasp.org/www-project-secure-headers/"
+    related_cve: []
+    pattern_match:
+      type: "regex"
+      scope: "file"
+      patterns:
+        - id: "P-WS-008-A"
+          description: >
+            Absence check: No 'add_header Strict-Transport-Security' directive
+            found in any server block or http block.
+          query: >
+            ^(?![\s\S]*add_header\s+Strict-Transport-Security)[\s\S]*$
+          note: "Run as full-file absence check on HTTPS server blocks"
+        - id: "P-WS-008-B"
+          description: >
+            HSTS present but max-age is less than 15768000 seconds (6 months),
+            which is below the CIS Benchmark minimum.
+          query: >
+            add_header\s+Strict-Transport-Security\s+["']?max-age=(?:[0-9]|[1-9][0-9]{1,6})["']?
+          note: "Check for short max-age values below 15768000"
+    insecure_example: |
+      server {
+          listen 443 ssl;
+          # INSECURE: HSTS header missing — browser will not enforce HTTPS
+      }
+    secure_example: |
+      server {
+          listen 443 ssl;
+          # HSTS: enforce HTTPS for 1 year, include subdomains, allow preloading
+          add_header Strict-Transport-Security "max-age=31536000; includeSubDomains; preload" always;
+      }
+    false_positive_conditions:
+      - id: "FP-WS-008-A"
+        verdict: "N/A — suppress only if server serves HTTP-only development traffic"
+        condition: >
+          The server block is a purely internal HTTP (non-HTTPS) server
+          used for development or health-check endpoints with no external
+          access. HSTS has no effect on non-SSL servers. Alert should be
+          suppressed for HTTP-only server blocks but retained for all
+          HTTPS (listen 443 ssl) blocks.
+    remediation: >
+      Add HSTS header to all HTTPS server blocks:
+
+        server {
+            listen 443 ssl;
+            add_header Strict-Transport-Security "max-age=31536000; includeSubDomains; preload" always;
+        }
+
+      Also add an HTTP-to-HTTPS redirect server block:
+        server {
+            listen 80;
+            return 301 https://$host$request_uri;
+        }
+    references:
+      - "https://datatracker.ietf.org/doc/html/rfc6797"
+      - "https://owasp.org/www-project-secure-headers/"
+      - "https://hstspreload.org/"
+
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # OJS-WS-009 | CWE-1021 | MEDIUM
+  # Missing X-Frame-Options Header — Clickjacking Risk
+  # ─────────────────────────────────────────────────────────────────────────────
+  - id: "OJS-WS-009"
+    name: "Missing X-Frame-Options Header — OJS Admin Interface Vulnerable to Clickjacking"
+    description: >
+      The X-Frame-Options HTTP response header, defined in RFC 7034, prevents
+      the OJS interface from being embedded in iframes on attacker-controlled
+      pages. Without this header, a clickjacking attack can overlay the OJS
+      administrative interface (journal settings, user management, decision
+      buttons) with transparent deceptive UI elements, causing authenticated
+      administrators or editors to inadvertently trigger privileged actions.
+      For OJS, clickjacking is directly relevant because: (1) the editorial
+      workflow dashboard contains one-click decision buttons (Accept/Decline);
+      (2) the journal settings page includes configuration toggles. The OWASP
+      Secure Headers Project (2024) classifies X-Frame-Options as a Required
+      header. CIS Nginx Benchmark Section 4.1.10 mandates its presence.
+      Note: Content-Security-Policy with frame-ancestors is the modern
+      replacement (see OJS-WS-010), but X-Frame-Options provides broader
+      browser support for legacy clients.
+    severity: "MEDIUM"
+    category: "webserver_configuration"
+    subcategory: "security_headers"
+    cwe: "CWE-1021"
+    owasp: "A05:2025"
+    confidence: "HIGH"
+    config_directive: "add_header X-Frame-Options"
+    standard_references:
+      - standard: "RFC 7034 (IETF, 2013)"
+        section: "HTTP Header Field X-Frame-Options"
+        url: "https://datatracker.ietf.org/doc/html/rfc7034"
+      - standard: "CIS Nginx Benchmark v2.0.0"
+        section: "Section 4.1.10 — Ensure X-Frame-Options Is Configured"
+        url: "https://www.cisecurity.org/benchmark/nginx"
+      - standard: "OWASP Secure Headers Project (2024)"
+        section: "X-Frame-Options — Required Header"
+        url: "https://owasp.org/www-project-secure-headers/"
+    related_cve: []
+    pattern_match:
+      type: "regex"
+      scope: "file"
+      patterns:
+        - id: "P-WS-009-A"
+          description: >
+            Absence check: No 'add_header X-Frame-Options' directive found.
+          query: >
+            ^(?![\s\S]*add_header\s+X-Frame-Options)[\s\S]*$
+          note: "Run as full-file absence check"
+    insecure_example: |
+      server {
+          listen 443 ssl;
+          server_name journal.example.org;
+          # INSECURE: No X-Frame-Options — admin interface can be clickjacked
+      }
+    secure_example: |
+      server {
+          listen 443 ssl;
+          server_name journal.example.org;
+          add_header X-Frame-Options "SAMEORIGIN" always;
+      }
+    false_positive_conditions:
+      - id: "FP-WS-009-A"
+        verdict: "SAFE — if CSP frame-ancestors is set instead"
+        condition: >
+          If the Content-Security-Policy header includes a 'frame-ancestors'
+          directive (e.g., "frame-ancestors 'self'"), this is the modern
+          equivalent of X-Frame-Options SAMEORIGIN and is accepted by all
+          modern browsers. The X-Frame-Options alert can be downgraded to LOW
+          if CSP frame-ancestors is present, as modern browsers prioritize CSP.
+    remediation: >
+      Add X-Frame-Options header to all OJS server blocks:
+
+        add_header X-Frame-Options "SAMEORIGIN" always;
+
+      Combine with CSP frame-ancestors for complete protection:
+        add_header Content-Security-Policy "frame-ancestors 'self';" always;
+    references:
+      - "https://datatracker.ietf.org/doc/html/rfc7034"
+      - "https://owasp.org/www-project-secure-headers/"
+      - "https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/X-Frame-Options"
+
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # OJS-WS-010 | CWE-116 | MEDIUM
+  # Missing Content-Security-Policy Header
+  # ─────────────────────────────────────────────────────────────────────────────
+  - id: "OJS-WS-010"
+    name: "Missing Content-Security-Policy Header — XSS Mitigation Absent"
+    description: >
+      Content Security Policy (CSP) is a W3C-standardized HTTP response header
+      that enables web applications to declare which content sources are
+      considered legitimate, providing a second layer of defense against
+      Cross-Site Scripting (XSS) attacks. Without a CSP header, a successful
+      XSS vulnerability in OJS (such as CVE-2018-12229, CVE-2022-26616, or
+      future discoveries) has no browser-level mitigation — injected scripts
+      can execute arbitrary JavaScript, steal session cookies, and exfiltrate
+      data. For OJS, which has historically had multiple XSS CVEs, the absence
+      of CSP significantly amplifies the impact of any XSS finding. The OWASP
+      Secure Headers Project (2024) and CIS Nginx Benchmark Section 4.1.11
+      both mandate Content-Security-Policy as a required security header.
+      While a strong CSP policy requires application-level coordination, even
+      a permissive policy (e.g., 'default-src self') provides meaningful
+      protection against trivial script injection attacks.
+    severity: "MEDIUM"
+    category: "webserver_configuration"
+    subcategory: "security_headers"
+    cwe: "CWE-116"
+    owasp: "A05:2025"
+    confidence: "HIGH"
+    config_directive: "add_header Content-Security-Policy"
+    standard_references:
+      - standard: "W3C Content Security Policy Level 3 (2023)"
+        section: "Content Security Policy specification"
+        url: "https://www.w3.org/TR/CSP3/"
+      - standard: "CIS Nginx Benchmark v2.0.0"
+        section: "Section 4.1.11 — Ensure Content-Security-Policy Header Is Set"
+        url: "https://www.cisecurity.org/benchmark/nginx"
+      - standard: "OWASP Secure Headers Project (2024)"
+        section: "Content-Security-Policy — Required Header"
+        url: "https://owasp.org/www-project-secure-headers/"
+    related_cve:
+      - "CVE-2018-12229"
+      - "CVE-2022-26616"
+    pattern_match:
+      type: "regex"
+      scope: "file"
+      patterns:
+        - id: "P-WS-010-A"
+          description: >
+            Absence check: No 'add_header Content-Security-Policy' directive.
+          query: >
+            ^(?![\s\S]*add_header\s+Content-Security-Policy)[\s\S]*$
+          note: "Run as full-file absence check"
+    insecure_example: |
+      server {
+          listen 443 ssl;
+          # INSECURE: No CSP header — XSS attacks have no browser-level mitigation
+      }
+    secure_example: |
+      server {
+          listen 443 ssl;
+          # OJS-compatible permissive CSP (tighten based on your plugin usage):
+          add_header Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; frame-ancestors 'self';" always;
+      }
+    false_positive_conditions:
+      - id: "FP-WS-010-A"
+        verdict: "REVIEW NEEDED — if CSP is set in application layer"
+        condition: >
+          OJS PHP application code may set the CSP header via
+          PHP header() calls. Inspect OJS /classes/core/PKPPageRouter.php or
+          equivalent for 'Content-Security-Policy' header injection. If the
+          application sets the header, suppress the nginx-level alert.
+    remediation: >
+      Add Content-Security-Policy header to all OJS HTTPS server blocks:
+
+        add_header Content-Security-Policy "default-src 'self'; \
+          script-src 'self' 'unsafe-inline' 'unsafe-eval'; \
+          style-src 'self' 'unsafe-inline'; \
+          img-src 'self' data: https:; \
+          font-src 'self' data:; \
+          frame-ancestors 'self';" always;
+
+      Note: OJS uses inline scripts and styles extensively, requiring
+      'unsafe-inline'. Gradually tighten the policy as OJS matures.
+    references:
+      - "https://www.w3.org/TR/CSP3/"
+      - "https://owasp.org/www-project-secure-headers/"
+      - "https://csp-evaluator.withgoogle.com/"
+
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # OJS-WS-011 | CWE-16 | MEDIUM
+  # Missing X-Content-Type-Options Header — MIME Sniffing Attack Risk
+  # ─────────────────────────────────────────────────────────────────────────────
+  - id: "OJS-WS-011"
+    name: "Missing X-Content-Type-Options Header — MIME Sniffing Enabled"
+    description: >
+      The 'X-Content-Type-Options: nosniff' header instructs browsers not to
+      perform MIME type sniffing on downloaded resources — instead, the browser
+      must respect the Content-Type header declared by the server. Without this
+      header, a browser may interpret an HTML or JavaScript payload uploaded as
+      a 'text/plain' or 'application/octet-stream' file and execute it as a
+      script. For OJS, which allows editors and authors to upload files
+      (galley files, supplementary material), MIME sniffing attacks can convert
+      an apparently benign uploaded file into an XSS vector if the uploaded
+      content contains HTML or script payloads and the browser chooses to
+      interpret it as text/html. The OWASP Secure Headers Project (2024) and
+      CIS Nginx Benchmark Section 4.1.8 both require this header. This is
+      classified as CWE-16 (Configuration) with direct impact on XSS
+      exploitability (CWE-79 chain).
+    severity: "MEDIUM"
+    category: "webserver_configuration"
+    subcategory: "security_headers"
+    cwe: "CWE-16"
+    owasp: "A05:2025"
+    confidence: "HIGH"
+    config_directive: "add_header X-Content-Type-Options"
+    standard_references:
+      - standard: "CIS Nginx Benchmark v2.0.0"
+        section: "Section 4.1.8 — Ensure X-Content-Type-Options Header Is Set"
+        url: "https://www.cisecurity.org/benchmark/nginx"
+      - standard: "OWASP Secure Headers Project (2024)"
+        section: "X-Content-Type-Options — Required Header"
+        url: "https://owasp.org/www-project-secure-headers/"
+      - standard: "WHATWG MIME Sniffing Standard (2023)"
+        section: "X-Content-Type-Options: nosniff processing"
+        url: "https://mimesniff.spec.whatwg.org/"
+    related_cve: []
+    pattern_match:
+      type: "regex"
+      scope: "file"
+      patterns:
+        - id: "P-WS-011-A"
+          description: >
+            Absence check: No 'add_header X-Content-Type-Options' directive.
+          query: >
+            ^(?![\s\S]*add_header\s+X-Content-Type-Options)[\s\S]*$
+          note: "Run as full-file absence check"
+    insecure_example: |
+      server {
+          # INSECURE: Missing X-Content-Type-Options — MIME sniffing enabled
+      }
+    secure_example: |
+      server {
+          add_header X-Content-Type-Options "nosniff" always;
+      }
+    false_positive_conditions:
+      - id: "FP-WS-011-A"
+        verdict: "SAFE if header set in application layer"
+        condition: >
+          If OJS PHP code or a PHP-FPM configuration sets the
+          X-Content-Type-Options header via PHP header() calls, the nginx
+          absence check may be a false positive. Cross-reference with PHP
+          application code before suppressing.
+    remediation: >
+      Add to all OJS server blocks:
+
+        add_header X-Content-Type-Options "nosniff" always;
+    references:
+      - "https://owasp.org/www-project-secure-headers/"
+      - "https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/X-Content-Type-Options"
+
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # OJS-WS-012 | CWE-116 | LOW
+  # Missing Referrer-Policy Header
+  # ─────────────────────────────────────────────────────────────────────────────
+  - id: "OJS-WS-012"
+    name: "Missing Referrer-Policy Header — URL Path Leakage to Third Parties"
+    description: >
+      The 'Referrer-Policy' header controls how much referrer information
+      (included in the HTTP Referer header) is sent with requests made from
+      the OJS site to external resources. Without a Referrer-Policy header,
+      browsers use their default policy, which in modern browsers is
+      'strict-origin-when-cross-origin'. However, for older browser compatibility
+      and defense-in-depth, explicitly setting the policy ensures consistent
+      behavior. For OJS, referrer leakage may expose: (1) internal administrative
+      URLs to analytics services embedded in themes; (2) manuscript submission
+      identifiers to CDN providers; (3) editorial decision URLs to external
+      resources. A strict Referrer-Policy prevents these internal paths from
+      being transmitted to third parties. The OWASP Secure Headers Project
+      (2024) recommends 'strict-origin-when-cross-origin' or stricter policies.
+    severity: "LOW"
+    category: "webserver_configuration"
+    subcategory: "security_headers"
+    cwe: "CWE-116"
+    owasp: "A05:2025"
+    confidence: "HIGH"
+    config_directive: "add_header Referrer-Policy"
+    standard_references:
+      - standard: "W3C Referrer Policy Specification (2022)"
+        section: "Referrer-Policy header"
+        url: "https://www.w3.org/TR/referrer-policy/"
+      - standard: "OWASP Secure Headers Project (2024)"
+        section: "Referrer-Policy — Recommended Header"
+        url: "https://owasp.org/www-project-secure-headers/"
+      - standard: "CIS Nginx Benchmark v2.0.0"
+        section: "Section 4.1.13 — Ensure Referrer-Policy Header Is Configured"
+        url: "https://www.cisecurity.org/benchmark/nginx"
+    related_cve: []
+    pattern_match:
+      type: "regex"
+      scope: "file"
+      patterns:
+        - id: "P-WS-012-A"
+          description: "Absence check: No 'add_header Referrer-Policy' directive."
+          query: >
+            ^(?![\s\S]*add_header\s+Referrer-Policy)[\s\S]*$
+          note: "Run as full-file absence check"
+    insecure_example: |
+      server {
+          # INSECURE: No Referrer-Policy — internal URLs may leak to third parties
+      }
+    secure_example: |
+      server {
+          add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+      }
+    false_positive_conditions:
+      - id: "FP-WS-012-A"
+        verdict: "ACCEPTABLE — lower priority than CRITICAL/HIGH findings"
+        condition: >
+          If OJS uses no third-party analytics or CDN resources and all
+          embedded content is self-hosted, the referrer leakage risk is
+          minimal. This finding is LOW severity and may be deferred while
+          CRITICAL and HIGH findings are addressed.
+    remediation: >
+      Add Referrer-Policy to all OJS server blocks:
+
+        add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+    references:
+      - "https://www.w3.org/TR/referrer-policy/"
+      - "https://owasp.org/www-project-secure-headers/"
+
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # OJS-WS-013 | CWE-693 | LOW
+  # Missing Permissions-Policy Header
+  # ─────────────────────────────────────────────────────────────────────────────
+  - id: "OJS-WS-013"
+    name: "Missing Permissions-Policy Header — Browser Feature Access Unrestricted"
+    description: >
+      The 'Permissions-Policy' HTTP header (successor to Feature-Policy)
+      allows a web application to declare which browser features and APIs it
+      requires, restricting access to potentially privacy-invasive features
+      (camera, microphone, geolocation, payment) for embedded iframes and
+      the page itself. For OJS, which does not require camera, microphone, or
+      geolocation access, a restrictive Permissions-Policy prevents malicious
+      scripts (from XSS or compromised third-party libraries) from silently
+      accessing these features. The OWASP Secure Headers Project (2024)
+      recommends Permissions-Policy as a defense-in-depth header. The W3C
+      Permissions Policy specification (2023) defines the header syntax.
+      CIS Nginx Benchmark Section 4.1.13 addresses browser feature restrictions.
+    severity: "LOW"
+    category: "webserver_configuration"
+    subcategory: "security_headers"
+    cwe: "CWE-693"
+    owasp: "A05:2025"
+    confidence: "HIGH"
+    config_directive: "add_header Permissions-Policy"
+    standard_references:
+      - standard: "W3C Permissions Policy Specification (2023)"
+        section: "Permissions-Policy HTTP Header"
+        url: "https://www.w3.org/TR/permissions-policy/"
+      - standard: "OWASP Secure Headers Project (2024)"
+        section: "Permissions-Policy — Recommended Header"
+        url: "https://owasp.org/www-project-secure-headers/"
+    related_cve: []
+    pattern_match:
+      type: "regex"
+      scope: "file"
+      patterns:
+        - id: "P-WS-013-A"
+          description: "Absence check: No 'add_header Permissions-Policy' directive."
+          query: >
+            ^(?![\s\S]*add_header\s+(?:Permissions-Policy|Feature-Policy))[\s\S]*$
+          note: "Run as full-file absence check; also check for legacy Feature-Policy"
+    insecure_example: |
+      server {
+          # No Permissions-Policy — all browser features accessible to scripts
+      }
+    secure_example: |
+      server {
+          add_header Permissions-Policy "camera=(), microphone=(), geolocation=(), payment=(), usb=()" always;
+      }
+    false_positive_conditions:
+      - id: "FP-WS-013-A"
+        verdict: "LOW PRIORITY — defer to CRITICAL/HIGH remediation"
+        condition: >
+          Permissions-Policy is a defense-in-depth measure. For OJS
+          deployments that have addressed all CRITICAL and HIGH findings,
+          this header adds marginal incremental security. It is a LOW
+          priority finding for initial security assessments.
+    remediation: >
+      Add a restrictive Permissions-Policy to OJS server blocks:
+
+        add_header Permissions-Policy "camera=(), microphone=(), geolocation=(), payment=(), usb=()" always;
+    references:
+      - "https://www.w3.org/TR/permissions-policy/"
+      - "https://owasp.org/www-project-secure-headers/"
+
+
+  # ════════════════════════════════════════════════════════════════════════════════
+  # DOMAIN 6: HTTP METHOD & ACCESS CONTROL
+  # ════════════════════════════════════════════════════════════════════════════════
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # OJS-WS-014 | CWE-16 | HIGH
+  # Dangerous HTTP Methods Enabled (TRACE, DELETE, PUT)
+  # ─────────────────────────────────────────────────────────────────────────────
+  - id: "OJS-WS-014"
+    name: "Dangerous HTTP Methods Not Restricted (TRACE/DELETE/PUT Allowed)"
+    description: >
+      By default, nginx passes all HTTP method requests to the backend
+      application. For OJS, only GET, HEAD, and POST requests are legitimate
+      (the application uses POST for form submissions and REST API interactions).
+      Allowing HTTP TRACE enables Cross-Site Tracing (XST) attacks, where
+      JavaScript can use XMLHttpRequest with TRACE to access HttpOnly cookies
+      by reflecting them in the response body — bypassing the HttpOnly flag
+      protection (CVE-2003-1567, OWASP XST). Allowing DELETE and PUT
+      without authentication to the application layer creates WebDAV-style
+      risks if the PHP-FPM configuration or application routing has any
+      mishandling of these methods. The CIS Nginx Benchmark Section 2.6.2
+      requires that only GET, HEAD, and POST be permitted by default, with
+      other methods explicitly blocked. NIST SP 800-44v2 Section 6.2.2
+      classifies unrestricted HTTP methods as a medium-severity configuration
+      finding.
+    severity: "HIGH"
+    category: "webserver_configuration"
+    subcategory: "access_control"
+    cwe: "CWE-16"
+    owasp: "A05:2025"
+    confidence: "MEDIUM"
+    config_directive: "limit_except / if $request_method"
+    standard_references:
+      - standard: "CIS Nginx Benchmark v2.0.0"
+        section: "Section 2.6.2 — Ensure Dangerous HTTP Methods Are Restricted"
+        url: "https://www.cisecurity.org/benchmark/nginx"
+      - standard: "NIST SP 800-44v2"
+        section: "Section 6.2.2 — Restricting HTTP Request Methods"
+        url: "https://csrc.nist.gov/publications/detail/sp/800-44/version-2/final"
+      - standard: "OWASP Testing Guide v4.2"
+        section: "WSTG-CONF-06 Test HTTP Methods"
+        url: "https://owasp.org/www-project-web-security-testing-guide/"
+    related_cve: []
+    pattern_match:
+      type: "regex"
+      scope: "file"
+      patterns:
+        - id: "P-WS-014-A"
+          description: >
+            Absence check: No HTTP method restriction block found.
+            Check for absence of 'if ($request_method' or 'limit_except'
+            directives that would restrict methods to GET/HEAD/POST.
+          query: >
+            ^(?![\s\S]*(?:if\s*\(\s*\$request_method\s*[!=]|limit_except\s+(?:GET|HEAD|POST)))[\s\S]*$
+          note: "Run as full-file absence check"
+    insecure_example: |
+      server {
+          location / {
+              try_files $uri $uri/ /index.php?$query_string;
+              # INSECURE: All HTTP methods (TRACE, DELETE, PUT, OPTIONS) allowed
+          }
+      }
+    secure_example: |
+      server {
+          location / {
+              # Restrict to safe HTTP methods only
+              if ($request_method !~ ^(GET|HEAD|POST)$) {
+                  return 405;
+              }
+              try_files $uri $uri/ /index.php?$query_string;
+          }
+      }
+    false_positive_conditions:
+      - id: "FP-WS-014-A"
+        verdict: "SAFE — if OJS REST API requires PUT/PATCH/DELETE"
+        condition: >
+          OJS 3.x uses a REST API (accessed at /api/v1/) that employs
+          PUT, PATCH, and DELETE methods for resource management operations.
+          A blanket block of all non-GET/POST methods will break OJS API
+          functionality. Instead, apply method restriction globally but
+          exempt the /api/v1/ location block. Flag as INFORMATIONAL if
+          proper scoped method restriction is applied.
+    remediation: >
+      Apply scoped method restrictions that preserve OJS API functionality:
+
+        # Block dangerous methods globally
+        if ($request_method ~ ^(TRACE|CONNECT)$) {
+            return 405;
+        }
+
+        # For non-API paths, restrict to safe methods only
+        location ~* ^(?!/api/v1/) {
+            if ($request_method !~ ^(GET|HEAD|POST|PUT|PATCH|DELETE|OPTIONS)$) {
+                return 405;
+            }
+        }
+
+        # For static assets, be more restrictive:
+        location ~* \.(js|css|png|jpg|gif|ico|woff|woff2)$ {
+            if ($request_method !~ ^(GET|HEAD)$) {
+                return 405;
+            }
+        }
+    references:
+      - "https://nginx.org/en/docs/http/ngx_http_core_module.html#limit_except"
+      - "https://owasp.org/www-project-web-security-testing-guide/"
+      - "https://www.cisecurity.org/benchmark/nginx"
+
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # OJS-WS-015 | CWE-942 | MEDIUM
+  # CORS Wildcard Origin Configured (Access-Control-Allow-Origin: *)
+  # ─────────────────────────────────────────────────────────────────────────────
+  - id: "OJS-WS-015"
+    name: "CORS Wildcard Origin — All External Domains Trusted by Browser"
+    description: >
+      The 'Access-Control-Allow-Origin: *' header instructs browsers to allow
+      any external origin to make cross-origin requests to the OJS server and
+      read the responses. When combined with the OJS REST API or any
+      authenticated endpoint, this can enable CSRF attacks that bypass the
+      SameSite cookie protection in older browsers, allow credential theft via
+      malicious sites that make OJS API calls on behalf of an authenticated
+      user, and expose sensitive OJS API responses to third-party sites. This
+      is classified as CWE-942 (Permissive Cross-origin Whitelist). CORS should
+      be configured with explicit trusted origins rather than a wildcard. The
+      OWASP Top 10:2025 A05 and API Security Top 10 (API4:2019 Lack of Resources
+      and Rate Limiting) both identify CORS misconfiguration as a significant
+      web server security issue. Detectify's analysis of 50,000 nginx configs
+      found wildcard CORS in 15% of PHP application configurations.
+    severity: "MEDIUM"
+    category: "webserver_configuration"
+    subcategory: "access_control"
+    cwe: "CWE-942"
+    owasp: "A05:2025"
+    confidence: "HIGH"
+    config_directive: "add_header Access-Control-Allow-Origin"
+    standard_references:
+      - standard: "OWASP Top 10:2025"
+        section: "A05 — Security Misconfiguration (CORS Misconfiguration)"
+        url: "https://owasp.org/Top10/2025/A05_2025-Security_Misconfiguration/"
+      - standard: "W3C CORS Specification (Fetch Standard, 2023)"
+        section: "Access-Control-Allow-Origin header"
+        url: "https://fetch.spec.whatwg.org/"
+      - standard: "PortSwigger Research: CORS Misconfiguration (2018)"
+        section: "Impact of wildcard CORS on authenticated APIs"
+        url: "https://portswigger.net/research/exploiting-cors-misconfigurations-for-bitcoins-and-bounties"
+    related_cve: []
+    pattern_match:
+      type: "regex"
+      scope: "line"
+      patterns:
+        - id: "P-WS-015-A"
+          description: "Wildcard CORS origin set via add_header"
+          query: >
+            ^\s*add_header\s+Access-Control-Allow-Origin\s+["']?\*["']?\s*;
+    insecure_example: |
+      server {
+          location /api/ {
+              add_header Access-Control-Allow-Origin *;
+              # INSECURE: All external origins can read API responses
+          }
+      }
+    secure_example: |
+      server {
+          location /api/ {
+              # Only trust specific authorized origins
+              set $cors_origin "";
+              if ($http_origin ~* "^https://(journal\.example\.org|trusted-partner\.org)$") {
+                  set $cors_origin $http_origin;
+              }
+              add_header Access-Control-Allow-Origin $cors_origin always;
+          }
+      }
+    false_positive_conditions:
+      - id: "FP-WS-015-A"
+        verdict: "ACCEPTABLE — static public asset endpoints only"
+        condition: >
+          If 'Access-Control-Allow-Origin: *' appears only in a location block
+          serving purely static assets (CSS, JS, fonts, images) with no
+          authentication-sensitive content, and 'Access-Control-Allow-Credentials'
+          is NOT set to 'true', the risk is significantly lower. Downgrade to LOW
+          severity for static-asset-only CORS wildcard. Retain MEDIUM if it
+          applies to any endpoint that may return user-specific data.
+    remediation: >
+      Replace wildcard CORS with an explicit origin validation:
+
+        map $http_origin $cors_origin {
+            default "";
+            "https://journal.example.org" "https://journal.example.org";
+            "https://trusted-partner.org" "https://trusted-partner.org";
+        }
+        server {
+            location /api/ {
+                add_header Access-Control-Allow-Origin $cors_origin always;
+            }
+        }
+    references:
+      - "https://fetch.spec.whatwg.org/"
+      - "https://portswigger.net/research/exploiting-cors-misconfigurations-for-bitcoins-and-bounties"
+      - "https://owasp.org/www-project-secure-headers/"
+
+
+  # ════════════════════════════════════════════════════════════════════════════════
+  # DOMAIN 7: DENIAL OF SERVICE PROTECTION
+  # ════════════════════════════════════════════════════════════════════════════════
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # OJS-WS-016 | CWE-770 | MEDIUM
+  # Excessive client_max_body_size — Large Upload DoS Risk
+  # ─────────────────────────────────────────────────────────────────────────────
+  - id: "OJS-WS-016"
+    name: "Excessive client_max_body_size — Server Resource Exhaustion Risk"
+    description: >
+      The 'client_max_body_size' directive limits the maximum size of an
+      HTTP request body that nginx will accept. Excessively large values
+      (e.g., 100M, 1G, or the use of 0 for unlimited) allow any HTTP client
+      to initiate large file uploads that consume disk space, CPU, and memory
+      — potentially causing a Denial of Service (DoS) condition by exhausting
+      server resources. For OJS, file uploads are legitimate and necessary
+      (manuscript submissions, galley files), but the size limit should be
+      proportional to the journal's actual maximum file size policy. The CIS
+      Nginx Benchmark Section 2.6.3 recommends setting client_max_body_size
+      to an appropriate value (typically 1M–20M for most applications).
+      NIST SP 800-44v2 Section 8.4 classifies unrestricted upload sizes as
+      a resource exhaustion vulnerability. OJS default configuration recommends
+      max 20MB for galley files. Values exceeding 100MB should be flagged.
+    severity: "MEDIUM"
+    category: "webserver_configuration"
+    subcategory: "denial_of_service"
+    cwe: "CWE-770"
+    owasp: "A05:2025"
+    confidence: "HIGH"
+    config_directive: "client_max_body_size"
+    standard_references:
+      - standard: "CIS Nginx Benchmark v2.0.0"
+        section: "Section 2.6.3 — Ensure client_max_body_size Is Appropriately Set"
+        url: "https://www.cisecurity.org/benchmark/nginx"
+      - standard: "NIST SP 800-44v2"
+        section: "Section 8.4 — Protecting Against Denial of Service"
+        url: "https://csrc.nist.gov/publications/detail/sp/800-44/version-2/final"
+    related_cve: []
+    pattern_match:
+      type: "regex"
+      scope: "line"
+      patterns:
+        - id: "P-WS-016-A"
+          description: "client_max_body_size set to 0 (unlimited)"
+          query: >
+            ^\s*client_max_body_size\s+0\s*;
+        - id: "P-WS-016-B"
+          description: "client_max_body_size set to more than 100MB"
+          query: >
+            ^\s*client_max_body_size\s+(?:[1-9][0-9]{2,}[mM]|[1-9][0-9]*[gG])\s*;
+        - id: "P-WS-016-C"
+          description: "client_max_body_size absent — nginx default is 1MB which may be too small for OJS"
+          query: >
+            ^(?![\s\S]*client_max_body_size)[\s\S]*$
+          note: "Informational — OJS requires at least 8MB; check if default 1MB is adequate"
+          severity_override: "LOW"
+    insecure_example: |
+      http {
+          client_max_body_size 0;   # INSECURE: Unlimited upload size
+          # Or:
+          client_max_body_size 1024m;   # INSECURE: 1GB uploads allowed
+      }
+    secure_example: |
+      http {
+          client_max_body_size 20m;   # Appropriate for OJS galley file uploads (max 20MB)
+      }
+    false_positive_conditions:
+      - id: "FP-WS-016-A"
+        verdict: "CONTEXT REQUIRED — check OJS journal file size policy"
+        condition: >
+          Some OJS journals hosting large datasets (GIS data, genomic files,
+          supplementary datasets) may legitimately require larger upload limits
+          (up to 200M). In this case, the size limit should be accompanied by
+          upload rate limiting and authenticated upload endpoint protection.
+          Flag as MEDIUM with a note to verify against journal policy.
+    remediation: >
+      Set an appropriate upload size limit in nginx.conf:
+
+        http {
+            client_max_body_size 20m;   # Adjust to match OJS journal's file size policy
+        }
+
+      Also set a matching PHP limit in php.ini or php-fpm pool config:
+        upload_max_filesize = 20M
+        post_max_size = 20M
+    references:
+      - "https://nginx.org/en/docs/http/ngx_http_core_module.html#client_max_body_size"
+      - "https://docs.pkp.sfu.ca/admin-guide/en/deploy-server"
+
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # OJS-WS-017 | CWE-400 | MEDIUM
+  # Missing Timeout Configuration — Slowloris DoS Vulnerability
+  # ─────────────────────────────────────────────────────────────────────────────
+  - id: "OJS-WS-017"
+    name: "Missing Timeout Directives — Vulnerable to Slowloris DoS Attack"
+    description: >
+      Without proper timeout configuration, an nginx server is vulnerable to
+      slow HTTP DoS attacks such as Slowloris (CVE-2007-6750 class), where an
+      attacker opens many connections and sends requests very slowly, keeping
+      each connection open indefinitely. The key timeout directives in nginx are:
+      'client_body_timeout' (max time between receiving client body packets),
+      'client_header_timeout' (max time for complete client request header),
+      'keepalive_timeout' (time to keep keep-alive connections open),
+      'send_timeout' (max time between consecutive writes to the client).
+      The CIS Nginx Benchmark Section 2.6.4 specifies recommended timeout values.
+      NIST SP 800-44v2 Section 8.4 requires timeout configuration as a
+      fundamental DoS mitigation measure. For OJS, which may handle long-running
+      file upload requests, appropriate timeout values must balance between
+      allowing legitimate uploads and preventing connection exhaustion attacks.
+    severity: "MEDIUM"
+    category: "webserver_configuration"
+    subcategory: "denial_of_service"
+    cwe: "CWE-400"
+    owasp: "A05:2025"
+    confidence: "MEDIUM"
+    config_directive: "client_body_timeout / client_header_timeout / send_timeout"
+    standard_references:
+      - standard: "CIS Nginx Benchmark v2.0.0"
+        section: "Section 2.6.4 — Ensure Timeout Values Are Configured"
+        url: "https://www.cisecurity.org/benchmark/nginx"
+      - standard: "NIST SP 800-44v2"
+        section: "Section 8.4 — Protecting Against Denial of Service"
+        url: "https://csrc.nist.gov/publications/detail/sp/800-44/version-2/final"
+    related_cve: []
+    pattern_match:
+      type: "regex"
+      scope: "file"
+      patterns:
+        - id: "P-WS-017-A"
+          description: >
+            Absence check: client_body_timeout not configured.
+          query: >
+            ^(?![\s\S]*client_body_timeout\s+\d)[\s\S]*$
+          note: "Run as full-file absence check"
+        - id: "P-WS-017-B"
+          description: >
+            Absence check: client_header_timeout not configured.
+          query: >
+            ^(?![\s\S]*client_header_timeout\s+\d)[\s\S]*$
+          note: "Run as full-file absence check"
+        - id: "P-WS-017-C"
+          description: "keepalive_timeout set to an excessively high value (>120s)"
+          query: >
+            ^\s*keepalive_timeout\s+(?:[2-9][0-9]{2,}|[1-9][0-9]{3,})\s*;
+    insecure_example: |
+      http {
+          # INSECURE: No timeout configuration — default values (60s) may be too permissive
+          # No client_body_timeout, client_header_timeout, or send_timeout set
+          keepalive_timeout 120;   # High value increases connection exhaustion risk
+      }
+    secure_example: |
+      http {
+          client_body_timeout 10s;      # Max time between body packet receipts
+          client_header_timeout 10s;    # Max time for receiving complete request header
+          keepalive_timeout 65s;        # CIS Benchmark recommended maximum
+          send_timeout 10s;             # Max time between client response writes
+      }
+    false_positive_conditions:
+      - id: "FP-WS-017-A"
+        verdict: "CONTEXT REQUIRED — for large file upload paths"
+        condition: >
+          For OJS file upload endpoints (/submission/ or /api/v1/), very short
+          client_body_timeout values (e.g., 10s) may interrupt legitimate large
+          file uploads. Apply a higher timeout value specifically for upload
+          paths using location-specific overrides, while keeping the global
+          value low.
+    remediation: >
+      Add timeout configuration to the http{} block:
+
+        http {
+            client_body_timeout    10s;
+            client_header_timeout  10s;
+            keepalive_timeout      65s;
+            send_timeout           10s;
+        }
+
+      For OJS file upload endpoints, use a higher timeout:
+        location /api/v1/submissions/ {
+            client_body_timeout 300s;   # 5 minutes for large file uploads
+        }
+    references:
+      - "https://nginx.org/en/docs/http/ngx_http_core_module.html#client_body_timeout"
+      - "https://www.cisecurity.org/benchmark/nginx"
+
+
+  # ════════════════════════════════════════════════════════════════════════════════
+  # DOMAIN 8: NGINX-SPECIFIC SECURITY ISSUES
+  # ════════════════════════════════════════════════════════════════════════════════
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # OJS-WS-018 | CWE-693 | LOW
+  # Unsafe add_header Inheritance (Child Block Silently Overrides Parent)
+  # ─────────────────────────────────────────────────────────────────────────────
+  - id: "OJS-WS-018"
+    name: "Unsafe add_header Inheritance — Security Headers Silently Removed in Location Blocks"
+    description: >
+      A well-documented nginx behavior (described in nginx documentation and
+      the Detectify research paper) states that if a location block defines
+      any 'add_header' directive, it completely overrides ALL 'add_header'
+      directives from the parent server or http block — not just the ones that
+      conflict. This means that a server block correctly configured with
+      X-Frame-Options, HSTS, X-Content-Type-Options, and CSP may silently
+      lose ALL these security headers for requests matching a location block
+      that sets even a single 'add_header' directive (e.g., add_header
+      Cache-Control). This is one of the most common causes of missing security
+      headers in nginx configurations that appear correct at first glance.
+      The Detectify research (2021) identified this as the most frequent cause
+      of security header bypass in real-world nginx deployments. This rule
+      detects the unsafe pattern of security headers in a parent block combined
+      with add_header in a child location block without re-declaring the
+      security headers.
+    severity: "LOW"
+    category: "webserver_configuration"
+    subcategory: "nginx_specific"
+    cwe: "CWE-693"
+    owasp: "A05:2025"
+    confidence: "MEDIUM"
+    config_directive: "add_header (inheritance behavior)"
+    standard_references:
+      - standard: "Detectify Nginx Misconfiguration Research (2021)"
+        section: "add_header inheritance — Security headers silently dropped in location blocks"
+        url: "https://blog.detectify.com/industry-insights/common-nginx-misconfigurations-that-leave-your-web-server-ope-to-attack/"
+      - standard: "nginx Official Documentation"
+        section: "Inheritance of add_header across contexts"
+        url: "https://nginx.org/en/docs/http/ngx_http_headers_module.html"
+    related_cve: []
+    pattern_match:
+      type: "regex"
+      scope: "file"
+      patterns:
+        - id: "P-WS-018-A"
+          description: >
+            Detect pattern: Security headers exist in server{} block AND
+            at least one location{} block has an add_header directive but
+            does NOT re-declare the security headers (inheritance override risk).
+            This is a structural pattern requiring block-level analysis.
+          query: >
+            (?s)add_header\s+(?:X-Frame-Options|Strict-Transport-Security|X-Content-Type-Options|Content-Security-Policy).*?location\s*[/~=][^{]*\{[^}]*add_header\s+(?!X-Frame-Options|Strict-Transport-Security|X-Content-Type-Options|Content-Security-Policy)
+          note: >
+            This rule requires structural (block-aware) analysis. The regex
+            approximation detects the presence of security headers at server
+            level followed by a location block with a different add_header.
+            A full parse of the nginx config tree is recommended for accuracy.
+    insecure_example: |
+      server {
+          add_header X-Frame-Options "SAMEORIGIN" always;         # Set at server level
+          add_header Strict-Transport-Security "max-age=31536000" always;
+          add_header X-Content-Type-Options "nosniff" always;
+
+          location /static/ {
+              add_header Cache-Control "public, max-age=86400";
+              # INSECURE: This silently removes X-Frame-Options, HSTS, and
+              # X-Content-Type-Options for all /static/ responses!
+          }
+      }
+    secure_example: |
+      server {
+          # Use variables or a centralized header include to avoid inheritance issues
+          add_header X-Frame-Options "SAMEORIGIN" always;
+          add_header Strict-Transport-Security "max-age=31536000" always;
+          add_header X-Content-Type-Options "nosniff" always;
+
+          location /static/ {
+              add_header Cache-Control "public, max-age=86400";
+              # SAFE: Re-declare ALL security headers in every location that uses add_header
+              add_header X-Frame-Options "SAMEORIGIN" always;
+              add_header Strict-Transport-Security "max-age=31536000" always;
+              add_header X-Content-Type-Options "nosniff" always;
+          }
+      }
+    false_positive_conditions:
+      - id: "FP-WS-018-A"
+        verdict: "SAFE — if headers-more module or include is used"
+        condition: >
+          If the nginx configuration uses the 'headers-more' module
+          (more_set_headers directive) instead of add_header, the inheritance
+          issue does not apply. Similarly, if security headers are set via an
+          'include' directive inside every location block, suppress the alert.
+    remediation: >
+      Avoid the inheritance problem by either:
+
+      Option 1 — Re-declare all security headers in every location that uses add_header:
+        location /static/ {
+            add_header Cache-Control "public, max-age=86400";
+            add_header X-Frame-Options "SAMEORIGIN" always;
+            add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+            add_header X-Content-Type-Options "nosniff" always;
+        }
+
+      Option 2 — Use an include file for security headers:
+        # /etc/nginx/security-headers.conf:
+        add_header X-Frame-Options "SAMEORIGIN" always;
+        add_header Strict-Transport-Security "max-age=31536000" always;
+        add_header X-Content-Type-Options "nosniff" always;
+
+        # In nginx.conf location blocks:
+        location /static/ {
+            include /etc/nginx/security-headers.conf;
+            add_header Cache-Control "public, max-age=86400";
+        }
+    references:
+      - "https://nginx.org/en/docs/http/ngx_http_headers_module.html"
+      - "https://blog.detectify.com/industry-insights/common-nginx-misconfigurations-that-leave-your-web-server-ope-to-attack/"
+
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # OJS-WS-019 | CWE-538 | HIGH
+  # .git Directory Web-Accessible
+  # ─────────────────────────────────────────────────────────────────────────────
+  - id: "OJS-WS-019"
+    name: "Git Repository Directory Web-Accessible — Source Code Disclosure"
+    description: >
+      OJS installations deployed via Git (common in development and production
+      environments that use git pull for updates) retain a .git/ directory
+      at the web root. If nginx does not explicitly deny access to paths
+      beginning with '/.git', an attacker can enumerate and download the entire
+      OJS source code history, including: any credentials accidentally committed
+      to config.inc.php or .env files, local configuration patches, plugin
+      customizations, and private theme code. The Detectify research identified
+      exposed .git directories as a top-3 most impactful nginx misconfiguration.
+      The HackerOne Bug Bounty program lists .git directory exposure as a
+      P2 (High) severity finding with average CVSS score of 7.5 (CVSS:3.1/AV:N/
+      AC:L/PR:N/UI:N/S:U/C:H/I:N/A:N). This maps to CWE-538 (Inclusion of
+      Sensitive Information in Publicly Accessible Files). The CIS Nginx
+      Benchmark Section 4.1.6 mandates blocking all dotfile directories.
+    severity: "HIGH"
+    category: "webserver_configuration"
+    subcategory: "sensitive_file_exposure"
+    cwe: "CWE-538"
+    owasp: "A05:2025"
+    confidence: "HIGH"
+    config_directive: "location ~ /\\."
+    standard_references:
+      - standard: "CIS Nginx Benchmark v2.0.0"
+        section: "Section 4.1.6 — Ensure Dotfile Directories Are Blocked"
+        url: "https://www.cisecurity.org/benchmark/nginx"
+      - standard: "Detectify Nginx Misconfiguration Research (2021)"
+        section: ".git directory exposure — critical misconfiguration in nginx"
+        url: "https://blog.detectify.com/industry-insights/common-nginx-misconfigurations-that-leave-your-web-server-ope-to-attack/"
+      - standard: "HackerOne Vulnerability Taxonomy"
+        section: ".git Directory Exposure — P2 High Severity"
+        url: "https://hackerone.com/reports/"
+    related_cve: []
+    pattern_match:
+      type: "regex"
+      scope: "file"
+      patterns:
+        - id: "P-WS-019-A"
+          description: >
+            Absence check: No location block blocking access to /.git,
+            dotfiles, or hidden directories.
+          query: >
+            ^(?![\s\S]*location\s+~\s+['""]?(?:\\\/\.|/\.)(?:git|svn|env|htaccess)?['""]?\s*\{[\s\S]*?(?:deny\s+all|return\s+(?:403|404)))[\s\S]*$
+          note: "Run as full-file absence check"
+    insecure_example: |
+      server {
+          root /var/www/ojs;
+          # INSECURE: No restriction on /.git — source code is downloadable
+          location / {
+              try_files $uri $uri/ /index.php?$query_string;
+          }
+      }
+    secure_example: |
+      server {
+          root /var/www/ojs;
+          # Block all hidden files and directories (dotfiles)
+          location ~ /\. {
+              deny all;
+              return 404;
+              access_log off;
+              log_not_found off;
+          }
+          location / {
+              try_files $uri $uri/ /index.php?$query_string;
+          }
+      }
+    false_positive_conditions:
+      - id: "FP-WS-019-A"
+        verdict: "SAFE — if OJS was deployed from tarball (no .git directory exists)"
+        condition: >
+          If OJS was installed from an official tarball (not via git clone),
+          no .git directory exists at the web root. Verify that no .git
+          directory exists at 'ls -la /var/www/ojs/.git'. If absent, this
+          finding is a false positive. However, the protective location block
+          is still recommended as a defense-in-depth measure.
+    remediation: >
+      Add a blanket deny for all dotfiles and hidden directories:
+
+        location ~ /\. {
+            deny all;
+            return 404;
+            access_log off;
+            log_not_found off;
+        }
+
+      This single rule protects against .git, .env, .htaccess, .svn, .DS_Store,
+      and any other hidden files that may contain sensitive information.
+    references:
+      - "https://nginx.org/en/docs/http/ngx_http_access_module.html"
+      - "https://blog.detectify.com/industry-insights/common-nginx-misconfigurations-that-leave-your-web-server-ope-to-attack/"
+
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # OJS-WS-020 | CWE-200 | MEDIUM
+  # PHP-FPM Status/Ping Endpoint Publicly Accessible
+  # ─────────────────────────────────────────────────────────────────────────────
+  - id: "OJS-WS-020"
+    name: "PHP-FPM Status or Ping Endpoint Publicly Accessible"
+    description: >
+      PHP-FPM provides a built-in status page (accessible at a configurable
+      path, commonly /status or /php-status) and a ping endpoint (/ping)
+      that return detailed information about the PHP-FPM pool: number of active
+      processes, accepted connections, listen queue, slow request counts,
+      and the full list of currently running request URIs (including their
+      query strings and client IPs). If nginx is configured to proxy these
+      endpoints to PHP-FPM without IP-based access restriction, any external
+      attacker can access this diagnostic information. This constitutes
+      CWE-200 (Exposure of Sensitive Information) because: (1) active request
+      URIs may include session tokens or sensitive parameters; (2) pool
+      statistics assist in timing attacks; (3) the full request list may
+      expose other users' active sessions. The CIS Nginx Benchmark Section
+      4.1.9 and NIST SP 800-44v2 Section 6.2 both classify diagnostic endpoint
+      exposure as a configuration vulnerability requiring access restriction.
+    severity: "MEDIUM"
+    category: "webserver_configuration"
+    subcategory: "information_disclosure"
+    cwe: "CWE-200"
+    owasp: "A05:2025"
+    confidence: "HIGH"
+    config_directive: "location ~ /status|/ping"
+    standard_references:
+      - standard: "CIS Nginx Benchmark v2.0.0"
+        section: "Section 4.1.9 — Ensure Diagnostic Endpoints Are Access-Controlled"
+        url: "https://www.cisecurity.org/benchmark/nginx"
+      - standard: "NIST SP 800-44v2"
+        section: "Section 6.2 — Protecting Diagnostic and Administrative Interfaces"
+        url: "https://csrc.nist.gov/publications/detail/sp/800-44/version-2/final"
+      - standard: "PHP-FPM Documentation"
+        section: "FPM Status Page — Security Considerations"
+        url: "https://www.php.net/manual/en/install.fpm.configuration.php"
+    related_cve: []
+    pattern_match:
+      type: "regex"
+      scope: "block"
+      patterns:
+        - id: "P-WS-020-A"
+          description: >
+            PHP-FPM status or ping endpoint configured without IP access control
+            (no 'allow' + 'deny all' pattern within the location block).
+          query: >
+            (?s)location\s+[~=]*\s*['""]?(?:/(?:status|ping|php-status|php-ping))['""]?\s*\{(?![^}]*deny\s+all)(?![^}]*allow\s+127).*?fastcgi_pass
+    insecure_example: |
+      server {
+          location ~ ^/(status|ping)$ {
+              fastcgi_pass 127.0.0.1:9000;
+              include fastcgi_params;
+              fastcgi_param SCRIPT_FILENAME $document_root$fastcgi_script_name;
+              # INSECURE: No access restriction — PHP-FPM stats exposed publicly
+          }
+      }
+    secure_example: |
+      server {
+          location ~ ^/(status|ping)$ {
+              fastcgi_pass 127.0.0.1:9000;
+              include fastcgi_params;
+              fastcgi_param SCRIPT_FILENAME $document_root$fastcgi_script_name;
+              # Restrict to localhost and monitoring server only
+              allow 127.0.0.1;
+              allow 10.0.0.5;   # Monitoring server IP
+              deny all;
+              access_log off;
+          }
+      }
+    false_positive_conditions:
+      - id: "FP-WS-020-A"
+        verdict: "SAFE — if restricted by upstream proxy or firewall"
+        condition: >
+          If the OJS server is behind a reverse proxy or load balancer that
+          restricts external access to the /status and /ping paths, and the
+          nginx config only serves these paths to internal IPs, the risk is
+          mitigated. Verify the upstream network-level restriction before
+          suppressing this finding.
+    remediation: >
+      Restrict PHP-FPM status endpoints to localhost and monitoring servers:
+
+        location ~ ^/(status|ping)$ {
+            fastcgi_pass unix:/run/php/php8.1-fpm.sock;
+            fastcgi_param SCRIPT_FILENAME $document_root$fastcgi_script_name;
+            include fastcgi_params;
+            allow 127.0.0.1;
+            deny all;
+            access_log off;
+        }
+    references:
+      - "https://www.php.net/manual/en/install.fpm.configuration.php"
+      - "https://nginx.org/en/docs/http/ngx_http_access_module.html"
