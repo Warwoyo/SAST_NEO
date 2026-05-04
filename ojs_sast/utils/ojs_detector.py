@@ -136,7 +136,6 @@ def _find_config(base_path: str) -> Optional[str]:
     """Locate config.inc.php in the OJS installation."""
     candidates = [
         os.path.join(base_path, "config.inc.php"),
-        os.path.join(base_path, "config.TEMPLATE.inc.php"),
     ]
     for candidate in candidates:
         if os.path.isfile(candidate):
@@ -160,7 +159,6 @@ def _detect_version(base_path: str) -> Optional[str]:
     """
     # Try appVersion.xml (OJS 3.x)
     version_files = [
-        os.path.join(base_path, "lib", "pkp", "registry", "appVersion.xml"),
         os.path.join(base_path, "dbscripts", "xml", "version.xml"),
     ]
 

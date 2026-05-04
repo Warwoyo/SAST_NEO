@@ -56,6 +56,10 @@ def find_files(
         ]
 
         for filename in files:
+            # Exclude template config files to prevent false positive configuration findings
+            if filename.endswith(".TEMPLATE.inc.php"):
+                continue
+
             filepath = os.path.join(root, filename)
 
             # Check extension

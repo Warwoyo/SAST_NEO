@@ -115,6 +115,11 @@ class UploadedFileScanner:
         if scan_for_webshell:
             self._scan_php_content(filepath)
 
+        # If already caught by a YAML rule (e.g., OJS-UPL-EXT-001), 
+        # stop here to prevent duplicate hardcoded findings like MIME mismatches
+        if is_dangerous:
+            return
+
         # Check for double extensions
         if is_double_extension(filepath):
             self._create_finding(
