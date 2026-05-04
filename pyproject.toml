@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "ojs-sast"
-version = "1.0.0"
+version = "1.5.7
 description = "Static Application Security Testing tool for Open Journal Systems (OJS)"
 readme = "README.md"
 license = {text = "MIT"}

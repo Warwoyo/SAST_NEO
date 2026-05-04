@@ -36,6 +36,23 @@ class ConfigScanner:
         self.ojs_config_path = ojs_config_path
         self.findings: list[Finding] = []
         self._finding_counter = 0
+        self._breached_passwords: set[str] | None = None
+
+    def _load_breached_passwords(self) -> set[str]:
+        if self._breached_passwords is not None:
+            return self._breached_passwords
+
+        self._breached_passwords = set()
+        data_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "data")
+        pw_file = os.path.join(data_dir, "breached_passwords.txt")
+        
+        content = read_file_safe(pw_file)
+        if content:
+            for line in content.splitlines():
+                line = line.strip()
+                if line:
+                    self._breached_passwords.add(line)
+        return self._breached_passwords
 
     def scan(self) -> list[Finding]:
         """Run all configuration scans."""
@@ -75,6 +92,29 @@ class ConfigScanner:
 
         if not sections:
             return
+
+        # Check for breached database password
+        db_password = parser.get_value("database", "password")
+        if db_password and db_password.strip():
+            breached_passwords = self._load_breached_passwords()
+            if db_password in breached_passwords:
+                self._finding_counter += 1
+                self.findings.append(Finding(
+                    id=f"CONFIG-{self._finding_counter:04d}",
+                    rule_id="OJS-CONF-BREACH-001",
+                    name="Breached Database Password Detected",
+                    description=f"The database password was found in a known breached passwords list. This poses a severe risk.",
+                    severity=Severity.CRITICAL,
+                    category=Category.CONFIG,
+                    subcategory="database",
+                    file_path=config_path,
+                    line_start=0,
+                    line_end=0,
+                    code_snippet=f"[database]\npassword = {db_password}",
+                    cwe="CWE-521",
+                    owasp="A07:2021",
+                    remediation="Change the database password to a strong, unique, and randomly generated value.",
+                ))
 
         ojs_rules = [r for r in self.rules if (
             r.subcategory in (
