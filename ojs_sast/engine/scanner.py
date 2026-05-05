@@ -82,22 +82,64 @@ class ScanOrchestrator:
         return output_dir
 
     def _resolve_upload_dirs(self) -> list[str]:
-        """Resolve upload directories from OJS config or CLI args."""
-        dirs = list(self.upload_dirs)
+        """Resolve upload directories from OJS config or CLI args.
 
+        Validates that resolved paths are actual upload directories,
+        not the OJS source root or parent directories (which would cause
+        false positives by scanning application source code).
+        """
+        dirs: list[str] = []
+        ojs_root = os.path.normpath(self.target_path)
+
+        def _is_safe_upload_dir(path: str) -> bool:
+            """Check that a path is a valid upload dir, not the OJS root or above."""
+            norm = os.path.normpath(os.path.abspath(path))
+            if not os.path.isdir(norm):
+                logger.debug(f"Upload dir does not exist, skipping: {norm}")
+                return False
+            # Reject if it IS the OJS root (would scan entire source tree)
+            if norm == ojs_root:
+                logger.warning(
+                    f"Upload dir '{norm}' is the OJS root — skipping to avoid "
+                    "scanning source code as uploaded files"
+                )
+                return False
+            # Reject if OJS root is INSIDE this path (parent of root)
+            if ojs_root.startswith(norm + os.sep):
+                logger.warning(
+                    f"Upload dir '{norm}' is a parent of the OJS root — skipping"
+                )
+                return False
+            return True
+
+        # 1. CLI-specified upload directories (user override — trust but validate)
+        for d in self.upload_dirs:
+            absd = os.path.normpath(os.path.abspath(d))
+            if _is_safe_upload_dir(absd):
+                dirs.append(absd)
+
+        # 2. Config-extracted directories (from config.inc.php)
         if self.ojs_info:
-            if self.ojs_info.files_dir and os.path.isdir(self.ojs_info.files_dir):
-                dirs.append(self.ojs_info.files_dir)
-            if self.ojs_info.public_files_dir and os.path.isdir(self.ojs_info.public_files_dir):
-                dirs.append(self.ojs_info.public_files_dir)
+            if self.ojs_info.files_dir and _is_safe_upload_dir(self.ojs_info.files_dir):
+                norm = os.path.normpath(os.path.abspath(self.ojs_info.files_dir))
+                if norm not in dirs:
+                    dirs.append(norm)
+                    logger.info(f"Upload scan: files_dir → {norm}")
 
-            # Common OJS upload locations
-            public_dir = os.path.join(self.target_path, "public")
-            if os.path.isdir(public_dir) and public_dir not in dirs:
-                dirs.append(public_dir)
+            if self.ojs_info.public_files_dir and _is_safe_upload_dir(self.ojs_info.public_files_dir):
+                norm = os.path.normpath(os.path.abspath(self.ojs_info.public_files_dir))
+                if norm not in dirs:
+                    dirs.append(norm)
+                    logger.info(f"Upload scan: public_files_dir → {norm}")
 
-        # Deduplicate
-        return list(dict.fromkeys(dirs))
+        if not dirs:
+            logger.warning(
+                "No valid upload directories resolved. "
+                "Ensure files_dir / public_files_dir are set in config.inc.php "
+                "or pass --upload-dir explicitly."
+            )
+
+        return dirs
 
     def get_scan_totals(self) -> dict[str, int]:
         """Pre-calculate the total number of files to scan for progress bars.
@@ -116,10 +158,14 @@ class ScanOrchestrator:
             )
 
         if "uploaded_file" in self.categories:
+            from ojs_sast.categories.uploaded_file.scanner import UploadedFileScanner
             upload_dirs = self._resolve_upload_dirs()
             total_uploads = 0
             for d in upload_dirs:
-                total_uploads += count_files(d, extensions=None, exclude_dirs=set())
+                total_uploads += count_files(
+                    d, extensions=None,
+                    exclude_dirs=UploadedFileScanner._OJS_SOURCE_DIRS,
+                )
             totals["uploaded_file"] = total_uploads
 
         return totals

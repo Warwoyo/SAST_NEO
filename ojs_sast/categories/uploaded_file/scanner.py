@@ -77,9 +77,27 @@ class UploadedFileScanner:
 
         return self.findings
 
+    # OJS application directories that must NEVER be treated as uploaded files.
+    # This is a defense-in-depth filter: even if the upload path overlaps
+    # with the OJS source tree, these subdirectories are excluded.
+    _OJS_SOURCE_DIRS = {
+        "lib", "classes", "plugins", "cache", "registry", "locale",
+        "controllers", "pages", "templates", "tools", "tests",
+        "dbscripts", "docs", "js", "styles", "cypress",
+        "node_modules", ".git", "__pycache__", "vendor",
+    }
+
     def _scan_directory(self, directory: str, progress_callback=None) -> None:
-        """Scan all files in an upload directory."""
-        for filepath in find_files(directory, extensions=None, exclude_dirs=set()):
+        """Scan all files in an upload directory.
+
+        Excludes known OJS source code directories to avoid false positives
+        when the upload path partially overlaps the OJS installation.
+        """
+        for filepath in find_files(
+            directory,
+            extensions=None,
+            exclude_dirs=self._OJS_SOURCE_DIRS,
+        ):
             self.files_scanned += 1
             self._scan_file(filepath)
             if progress_callback:

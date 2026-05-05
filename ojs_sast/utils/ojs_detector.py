@@ -207,20 +207,32 @@ def _parse_version_xml(content: str) -> Optional[str]:
 
 
 def _parse_file_dirs(config_path: str) -> tuple[Optional[str], Optional[str]]:
-    """Extract files_dir and public_files_dir from config.inc.php."""
+    """Extract files_dir and public_files_dir from config.inc.php.
+
+    Relative paths are resolved against the OJS installation root
+    (the directory containing config.inc.php).
+    """
     content = read_file_safe(config_path)
     if not content:
         return None, None
+
+    ojs_root = os.path.dirname(os.path.abspath(config_path))
 
     files_dir = None
     public_files_dir = None
 
     files_match = re.search(r"^\s*files_dir\s*=\s*(.+)$", content, re.MULTILINE)
     if files_match:
-        files_dir = files_match.group(1).strip().strip('"').strip("'")
+        raw = files_match.group(1).strip().strip('"').strip("'")
+        if raw:
+            files_dir = raw if os.path.isabs(raw) else os.path.join(ojs_root, raw)
+            files_dir = os.path.normpath(files_dir)
 
     public_match = re.search(r"^\s*public_files_dir\s*=\s*(.+)$", content, re.MULTILINE)
     if public_match:
-        public_files_dir = public_match.group(1).strip().strip('"').strip("'")
+        raw = public_match.group(1).strip().strip('"').strip("'")
+        if raw:
+            public_files_dir = raw if os.path.isabs(raw) else os.path.join(ojs_root, raw)
+            public_files_dir = os.path.normpath(public_files_dir)
 
     return files_dir, public_files_dir
