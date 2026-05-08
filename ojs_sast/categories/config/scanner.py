@@ -30,6 +30,9 @@ class ConfigScanner:
         self.rules = [r for r in rules if r.category in (
             "config", "configuration", "webserver_configuration"
         )]
+        self.rules = [r for r in rules if r.category in (
+            "config", "configuration", "webserver_configuration"
+        )]
         self.target_path = os.path.abspath(target_path)
         self.nginx_config = nginx_config
         self.apache_config = apache_config
@@ -142,6 +145,18 @@ class ConfigScanner:
         parser = NginxConfigParser()
         parser.parse(filepath)
 
+        nginx_rules = [r for r in self.rules if (
+            r.subcategory in ("nginx", "nginx_security")
+            or (
+                r.category == "webserver_configuration"
+                and r.subcategory in (
+                    "file_upload_security", "sensitive_file_exposure",
+                    "cryptographic_configuration", "security_headers",
+                    "transport_security", "information_disclosure",
+                    "access_control", "denial_of_service", "nginx_specific",
+                )
+            )
+        )]
         nginx_rules = [r for r in self.rules if (
             r.subcategory in ("nginx", "nginx_security")
             or (
