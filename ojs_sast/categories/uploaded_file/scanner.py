@@ -218,6 +218,7 @@ class UploadedFileScanner:
                     cwe="CWE-94",
                     remediation="Review and likely delete the file.",
                 )
+                return  # One dangerous pattern finding per file is enough
 
     def _scan_pdf_payloads(self, filepath: str) -> None:
         """Check PDF files for embedded JavaScript or auto-open actions."""
