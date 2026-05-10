@@ -63,9 +63,9 @@ class OJSConfigParser:
             if kv_match:
                 key = kv_match.group(1).strip()
                 value = kv_match.group(2).strip()
+                value = self._strip_inline_comment(value).strip()
                 # Remove surrounding quotes
-                if (value.startswith('"') and value.endswith('"')) or \
-                   (value.startswith("'") and value.endswith("'")):
+                if len(value) >= 2 and value[0] == value[-1] and value[0] in ("\"", "'"):
                     value = value[1:-1]
                 self.sections[current_section][key] = value
 
@@ -95,3 +95,19 @@ class OJSConfigParser:
     def has_value(self, section: str, key: str) -> bool:
         """Check if a key exists in a section."""
         return key in self.sections.get(section, {})
+
+    @staticmethod
+    def _strip_inline_comment(value: str) -> str:
+        """Strip inline comments outside of quotes (INI style)."""
+        in_single = False
+        in_double = False
+
+        for i, ch in enumerate(value):
+            if ch == "'" and not in_double:
+                in_single = not in_single
+            elif ch == '"' and not in_single:
+                in_double = not in_double
+            elif ch in (";", "#") and not in_single and not in_double:
+                return value[:i].rstrip()
+
+        return value
