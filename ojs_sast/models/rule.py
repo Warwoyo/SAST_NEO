@@ -66,17 +66,6 @@ class Rule:
     related_cve: list[str] = field(default_factory=list)
     insecure_example: str = ""
     secure_example: str = ""
-    # Extended fields from scientific ruleset
-    confidence: str = ""
-    scan_scope: Optional[dict] = None
-    false_positive_conditions: list[dict] = field(default_factory=list)
-    config_section: str = ""
-    config_key: str = ""
-    config_directive: str = ""
-    standard_references: list[dict] = field(default_factory=list)
-    related_cve: list[str] = field(default_factory=list)
-    insecure_example: str = ""
-    secure_example: str = ""
 
     @classmethod
     def from_dict(cls, data: dict) -> "Rule":
@@ -93,17 +82,6 @@ class Rule:
         pattern_data = data.get("pattern_match")
         pattern_config = None
         if pattern_data and isinstance(pattern_data, dict):
-            raw_patterns = pattern_data.get("patterns", [])
-            pattern_type = pattern_data.get("type", "regex")
-            # Normalize patterns: extract 'query' from dict-type patterns
-            normalized = []
-            for p in raw_patterns:
-                if isinstance(p, str):
-                    normalized.append(p)
-                elif isinstance(p, dict):
-                    query = p.get("query", "")
-                    if query:
-                        normalized.append(query.strip())
             raw_patterns = pattern_data.get("patterns", [])
             pattern_type = pattern_data.get("type", "regex")
             # Normalize patterns: extract 'query' from dict-type patterns
@@ -165,17 +143,6 @@ class Rule:
             related_cve=data.get("related_cve", []),
             insecure_example=data.get("insecure_example", ""),
             secure_example=data.get("secure_example", ""),
-            # Extended fields from scientific ruleset
-            confidence=data.get("confidence", ""),
-            scan_scope=data.get("scan_scope"),
-            false_positive_conditions=data.get("false_positive_conditions", []),
-            config_section=data.get("config_section", ""),
-            config_key=data.get("config_key", ""),
-            config_directive=data.get("config_directive", ""),
-            standard_references=data.get("standard_references", []),
-            related_cve=data.get("related_cve", []),
-            insecure_example=data.get("insecure_example", ""),
-            secure_example=data.get("secure_example", ""),
         )
 
     def to_dict(self) -> dict:
@@ -197,27 +164,6 @@ class Rule:
             "references": self.references,
             "false_positive_notes": self.false_positive_notes,
         }
-        # Extended fields (only include if non-empty)
-        if self.confidence:
-            result["confidence"] = self.confidence
-        if self.scan_scope:
-            result["scan_scope"] = self.scan_scope
-        if self.false_positive_conditions:
-            result["false_positive_conditions"] = self.false_positive_conditions
-        if self.config_section:
-            result["config_section"] = self.config_section
-        if self.config_key:
-            result["config_key"] = self.config_key
-        if self.config_directive:
-            result["config_directive"] = self.config_directive
-        if self.standard_references:
-            result["standard_references"] = self.standard_references
-        if self.related_cve:
-            result["related_cve"] = self.related_cve
-        if self.insecure_example:
-            result["insecure_example"] = self.insecure_example
-        if self.secure_example:
-            result["secure_example"] = self.secure_example
         # Extended fields (only include if non-empty)
         if self.confidence:
             result["confidence"] = self.confidence

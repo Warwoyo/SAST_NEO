@@ -10,7 +10,6 @@ import fnmatch
 import uuid
 
 from ojs_sast.categories.source_code.php_parser import parse_php_file
-from ojs_sast.categories.source_code.smarty_parser import scan_smarty_template
 from ojs_sast.engine.taint.analyzer import TaintAnalyzer
 from ojs_sast.models.finding import Category, Finding, Severity, TaintPath
 from ojs_sast.models.rule import Rule
@@ -66,7 +65,6 @@ class SourceCodeScanner:
             elif ext in JS_EXTENSIONS:
                 self._scan_with_patterns(filepath)
             elif ext in TEMPLATE_EXTENSIONS:
-                self._scan_smarty_file(filepath)
                 self._scan_with_patterns(filepath)
 
             self.files_scanned += 1
@@ -94,36 +92,6 @@ class SourceCodeScanner:
 
         # Run regex pattern matching from rules
         self._scan_with_patterns(filepath)
-
-    def _scan_smarty_file(self, filepath: str) -> None:
-        """Scan a Smarty template file for XSS patterns."""
-        content = read_file_safe(filepath)
-        if not content:
-            return
-
-        smarty_findings = scan_smarty_template(content)
-        for sf in smarty_findings:
-            self._finding_counter += 1
-            snippet = get_code_snippet(filepath, sf.line_number, context=2)
-
-            finding = Finding(
-                id=f"SMARTY-{self._finding_counter:04d}",
-                rule_id=f"OJS-SC-SMARTY-{sf.pattern_name.upper()}",
-                name=f"Smarty Template XSS: {sf.pattern_name}",
-                description=sf.description,
-                severity=Severity.MEDIUM,
-                category=Category.SOURCE_CODE,
-                subcategory="injection",
-                file_path=filepath,
-                line_start=sf.line_number,
-                line_end=sf.line_number,
-                code_snippet=snippet,
-                cwe=sf.cwe,
-                owasp="A03:2021",
-                remediation="Add |escape or |strip_unsafe_html modifier to the Smarty variable.",
-                metadata={"matched_text": sf.matched_text[:200]},
-            )
-            self.findings.append(finding)
 
     def _scan_with_patterns(self, filepath: str) -> None:
         """Run regex pattern matching from YAML rules against a file."""
