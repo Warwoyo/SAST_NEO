@@ -79,10 +79,12 @@ class SourceCodeScanner:
 
         # Run taint analysis if AST is available
         if tree is not None and not self.disable_taint:
+            applicable_taint_rules = [r for r in self.rules if r.taint_analysis and self._should_run_rule(r, filepath)]
             try:
                 analyzer = TaintAnalyzer(
                     filepath, tree, source_bytes,
                     finding_id_offset=self._taint_finding_counter,
+                    custom_rules=applicable_taint_rules,
                 )
                 taint_findings = analyzer.analyze()
                 self._taint_finding_counter = analyzer._finding_counter

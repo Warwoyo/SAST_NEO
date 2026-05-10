@@ -42,6 +42,7 @@ from ojs_sast.engine.taint.sanitizers import get_sanitizer_category, is_effectiv
 from ojs_sast.engine.taint.sinks import get_sink_categories, is_taint_sink
 from ojs_sast.engine.taint.sources import get_source_category, is_taint_source
 from ojs_sast.models.finding import Category, Finding, Severity, TaintPath
+from ojs_sast.models.rule import Rule
 from ojs_sast.utils.file_utils import get_code_snippet
 from ojs_sast.utils.logger import logger
 
@@ -55,6 +56,7 @@ class TaintedVariable:
     taint_path: list[str] = field(default_factory=list)
     sanitized_by: str | None = None
     sanitizer_category: str | None = None
+    custom_rule: Rule | None = None
 
 
 class TaintAnalyzer:
@@ -69,13 +71,48 @@ class TaintAnalyzer:
     6. If tainted var reaches a sink → generate Finding with TaintPath
     """
 
-    def __init__(self, filepath: str, tree: Any, source_bytes: bytes, finding_id_offset: int = 0) -> None:
+    def __init__(self, filepath: str, tree: Any, source_bytes: bytes, finding_id_offset: int = 0, custom_rules: list[Rule] | None = None) -> None:
         self.filepath = filepath
         self.tree = tree
         self.source_bytes = source_bytes
         self.tainted_vars: dict[str, TaintedVariable] = {}
         self.findings: list[Finding] = []
         self._finding_counter = finding_id_offset
+        self.custom_rules = custom_rules or []
+        
+        self._compiled_custom_sources: dict[re.Pattern, Rule] = {}
+        self._compiled_custom_sinks: dict[re.Pattern, Rule] = {}
+        self._compiled_custom_sanitizers: dict[re.Pattern, Rule] = {}
+
+        for rule in self.custom_rules:
+            if not rule.taint_analysis:
+                continue
+            for src in rule.taint_analysis.sources:
+                pat = self._build_regex(src)
+                if pat: self._compiled_custom_sources[pat] = rule
+            for sink in rule.taint_analysis.sinks:
+                pat = self._build_regex(sink)
+                if pat: self._compiled_custom_sinks[pat] = rule
+            for san in rule.taint_analysis.sanitizers:
+                pat = self._build_regex(san)
+                if pat: self._compiled_custom_sanitizers[pat] = rule
+
+    @staticmethod
+    def _build_regex(raw_string: str) -> re.Pattern | None:
+        # Strip comments, descriptions and parameters
+        clean = re.split(r'\s+[—#]|\s+\(', raw_string)[0].strip()
+        if not clean:
+            return None
+        if clean.endswith("()"):
+            clean = clean[:-2]
+        
+        escaped = re.escape(clean)
+        if clean.startswith("$"):
+            # Ensure safe word boundary if it ends with alphanumeric
+            suffix = r"\b" if clean[-1].isalnum() or clean[-1] == "_" else ""
+            return re.compile(rf"(?<![a-zA-Z0-9_]){escaped}{suffix}")
+        else:
+            return re.compile(rf"(?<!\$)(?<!->)\b{escaped}\s*\(")
 
     def analyze(self) -> list[Finding]:
         """Run taint analysis on the parsed PHP file.
@@ -113,8 +150,22 @@ class TaintAnalyzer:
 
             value_text = get_node_text(value_node, self.source_bytes)
 
+            is_source = False
+            source_cat = "unknown"
+            custom_rule = None
+
             if is_taint_source(value_text):
+                is_source = True
                 source_cat = get_source_category(value_text) or "unknown"
+            else:
+                for pat, rule in self._compiled_custom_sources.items():
+                    if pat.search(value_text):
+                        is_source = True
+                        source_cat = rule.subcategory or "custom"
+                        custom_rule = rule
+                        break
+
+            if is_source:
                 line = get_line_number(node)
 
                 # Check if the source is wrapped in a sanitizer
@@ -123,6 +174,12 @@ class TaintAnalyzer:
                 if is_sanitizer(value_text):
                     sanitized_by = value_text
                     sanitizer_cat = get_sanitizer_category(value_text)
+                else:
+                    for pat, rule in self._compiled_custom_sanitizers.items():
+                        if pat.search(value_text):
+                            sanitized_by = value_text
+                            sanitizer_cat = "custom_sanitizer"
+                            break
 
                 self.tainted_vars[target] = TaintedVariable(
                     name=target,
@@ -132,6 +189,7 @@ class TaintAnalyzer:
                                 + (f" [SANITIZED by {sanitizer_cat}]" if sanitized_by else "")],
                     sanitized_by=sanitized_by,
                     sanitizer_category=sanitizer_cat,
+                    custom_rule=custom_rule,
                 )
                 logger.debug(
                     f"Taint source found: {target} = {value_text} "
@@ -177,8 +235,19 @@ class TaintAnalyzer:
                         line = get_line_number(node)
 
                         # Check if value passes through a sanitizer
+                        is_san = False
+                        san_cat = None
                         if is_sanitizer(value_text):
+                            is_san = True
                             san_cat = get_sanitizer_category(value_text)
+                        else:
+                            for pat, rule in self._compiled_custom_sanitizers.items():
+                                if pat.search(value_text):
+                                    is_san = True
+                                    san_cat = "custom_sanitizer"
+                                    break
+
+                        if is_san:
                             self.tainted_vars[target] = TaintedVariable(
                                 name=target,
                                 source=tainted_from.source,
@@ -188,6 +257,7 @@ class TaintAnalyzer:
                                 ],
                                 sanitized_by=value_text,
                                 sanitizer_category=san_cat,
+                                custom_rule=tainted_from.custom_rule,
                             )
                         else:
                             self.tainted_vars[target] = TaintedVariable(
@@ -197,6 +267,7 @@ class TaintAnalyzer:
                                 taint_path=tainted_from.taint_path + [
                                     f"{target} = {value_text} (line {line})"
                                 ],
+                                custom_rule=tainted_from.custom_rule,
                             )
                         changed = True
                         break
@@ -220,7 +291,22 @@ class TaintAnalyzer:
 
             full_call = get_node_text(node, self.source_bytes)
 
-            if not is_taint_sink(func_name):
+            is_sink = False
+            sink_cats = []
+            matched_custom_rule = None
+
+            if is_taint_sink(func_name):
+                is_sink = True
+                sink_cats = get_sink_categories(func_name)
+            else:
+                for pat, rule in self._compiled_custom_sinks.items():
+                    if pat.search(full_call):
+                        is_sink = True
+                        sink_cats = [rule.subcategory or "custom_sink"]
+                        matched_custom_rule = rule
+                        break
+
+            if not is_sink:
                 continue
 
             # OOP Context Awareness: skip safe object types calling
@@ -232,13 +318,14 @@ class TaintAnalyzer:
                     if any(p.search(obj_text) for p in _SAFE_OBJECT_PATTERNS):
                         continue
 
-            # Get sink categories
-            sink_cats = get_sink_categories(func_name)
-
             # Inline Sanitization Detection (full call text)
-            if is_sanitizer(full_call):
-                if any(is_effective_sanitizer(full_call, sc) for sc in sink_cats):
-                    continue
+            if is_sanitizer(full_call) and any(is_effective_sanitizer(full_call, sc) for sc in sink_cats):
+                continue
+            
+            # Check custom sanitizers
+            custom_sanitized = any(pat.search(full_call) for pat in self._compiled_custom_sanitizers)
+            if custom_sanitized:
+                continue
 
             # Check if any arguments contain tainted variables
             args = get_function_arguments(node, self.source_bytes)
@@ -247,11 +334,10 @@ class TaintAnalyzer:
             if args_node:
                 args_text = get_node_text(args_node, self.source_bytes)
 
-                # Strengthened Inline Sanitization: check argument text.
-                # Catches nested patterns like mysql_query(mysql_real_escape_string($d))
-                if is_sanitizer(args_text):
-                    if any(is_effective_sanitizer(args_text, sc) for sc in sink_cats):
-                        continue
+                if is_sanitizer(args_text) and any(is_effective_sanitizer(args_text, sc) for sc in sink_cats):
+                    continue
+                if any(pat.search(args_text) for pat in self._compiled_custom_sanitizers):
+                    continue
 
                 arg_vars = find_variables_in_node(args_node, self.source_bytes)
                 for var in arg_vars:
@@ -269,11 +355,9 @@ class TaintAnalyzer:
 
                         # Check if sanitization is effective for this sink
                         if tainted.sanitized_by:
-                            effective = any(
-                                is_effective_sanitizer(tainted.sanitized_by, sc)
-                                for sc in sink_cats
-                            )
-                            if effective:
+                            effective = any(is_effective_sanitizer(tainted.sanitized_by, sc) for sc in sink_cats)
+                            custom_effective = any(pat.search(tainted.sanitized_by) for pat in self._compiled_custom_sanitizers)
+                            if effective or custom_effective:
                                 continue
 
                         # OJS DAO Bindings Check: if func is retrieve,
@@ -292,7 +376,7 @@ class TaintAnalyzer:
 
                         line = get_line_number(node)
                         self._create_finding(
-                            tainted, func_name, full_call, line, sink_cats
+                            tainted, func_name, full_call, line, sink_cats, matched_custom_rule
                         )
                         break
 
@@ -326,6 +410,8 @@ class TaintAnalyzer:
                     if tainted.sanitized_by:
                         if is_effective_sanitizer(tainted.sanitized_by, "xss"):
                             continue
+                        if any(pat.search(tainted.sanitized_by) for pat in self._compiled_custom_sanitizers):
+                            continue
 
                     line = get_line_number(node)
                     self._create_finding(
@@ -340,6 +426,7 @@ class TaintAnalyzer:
         sink_code: str,
         sink_line: int,
         sink_categories: list[str],
+        matched_custom_rule: Rule | None = None,
     ) -> None:
         """Create a Finding from a taint-to-sink flow."""
         self._finding_counter += 1
@@ -399,26 +486,53 @@ class TaintAnalyzer:
 
         snippet = get_code_snippet(self.filepath, sink_line, context=2)
 
-        finding = Finding(
-            id=f"TAINT-{self._finding_counter:04d}",
-            rule_id=f"OJS-SC-{primary_cat.upper().replace('_', '')}-TAINT",
-            name=f"{vuln_name} via tainted input",
-            description=(
-                f"Data from user input ({tainted.source}) flows into "
-                f"a dangerous function ({sink_name}) without adequate sanitization."
-            ),
-            severity=self._get_severity(primary_cat, tainted.sanitized_by is not None),
-            category=Category.SOURCE_CODE,
-            subcategory=subcategory,
-            file_path=self.filepath,
-            line_start=min(tainted.source_line, sink_line),
-            line_end=max(tainted.source_line, sink_line),
-            code_snippet=snippet,
-            cwe=cwe,
-            owasp=owasp,
-            taint_path=taint_path,
-            remediation=self._get_remediation(primary_cat),
-        )
+        # Use the matched rule (from sink or source) for specific reporting if available
+        rule_to_use = matched_custom_rule or tainted.custom_rule
+
+        if rule_to_use:
+            finding = Finding(
+                id=f"TAINT-{self._finding_counter:04d}",
+                rule_id=rule_to_use.id,
+                name=rule_to_use.name,
+                description=(
+                    f"Data from user input ({tainted.source}) flows into "
+                    f"a dangerous function ({sink_name}) without adequate sanitization. "
+                    f"Matches rule {rule_to_use.id}."
+                ),
+                severity=Severity.from_string(rule_to_use.severity),
+                category=Category.SOURCE_CODE,
+                subcategory=rule_to_use.subcategory,
+                file_path=self.filepath,
+                line_start=min(tainted.source_line, sink_line),
+                line_end=max(tainted.source_line, sink_line),
+                code_snippet=snippet,
+                cwe=rule_to_use.cwe,
+                owasp=rule_to_use.owasp,
+                cve_references=rule_to_use.cve_references,
+                taint_path=taint_path,
+                remediation=rule_to_use.remediation,
+            )
+        else:
+            finding = Finding(
+                id=f"TAINT-{self._finding_counter:04d}",
+                rule_id=f"OJS-SC-{primary_cat.upper().replace('_', '')}-TAINT",
+                name=f"{vuln_name} via tainted input",
+                description=(
+                    f"Data from user input ({tainted.source}) flows into "
+                    f"a dangerous function ({sink_name}) without adequate sanitization."
+                ),
+                severity=self._get_severity(primary_cat, tainted.sanitized_by is not None),
+                category=Category.SOURCE_CODE,
+                subcategory=subcategory,
+                file_path=self.filepath,
+                line_start=min(tainted.source_line, sink_line),
+                line_end=max(tainted.source_line, sink_line),
+                code_snippet=snippet,
+                cwe=cwe,
+                owasp=owasp,
+                taint_path=taint_path,
+                remediation=self._get_remediation(primary_cat),
+            )
 
         self.findings.append(finding)
 
