@@ -112,7 +112,9 @@ class TaintAnalyzer:
             suffix = r"\b" if clean[-1].isalnum() or clean[-1] == "_" else ""
             return re.compile(rf"(?<![a-zA-Z0-9_]){escaped}{suffix}")
         else:
-            return re.compile(rf"(?<!\$)(?<!->)\b{escaped}\s*\(")
+            # FIX: Removed the (?<!->) negative lookbehind so OOP methods are matched.
+            # We match the function/method name followed by optional whitespace and a parenthesis.
+            return re.compile(rf"\b{escaped}\s*\(")
 
     def analyze(self) -> list[Finding]:
         """Run taint analysis on the parsed PHP file.
@@ -307,16 +309,16 @@ class TaintAnalyzer:
             sink_cats = []
             matched_custom_rule = None
 
-            if is_taint_sink(func_name):
+            for pat, rule in self._compiled_custom_sinks.items():
+                if pat.search(full_call):
+                    is_sink = True
+                    sink_cats = [rule.subcategory or "custom_sink"]
+                    matched_custom_rule = rule
+                    break
+
+            if not is_sink and is_taint_sink(func_name):
                 is_sink = True
                 sink_cats = get_sink_categories(func_name)
-            else:
-                for pat, rule in self._compiled_custom_sinks.items():
-                    if pat.search(full_call):
-                        is_sink = True
-                        sink_cats = [rule.subcategory or "custom_sink"]
-                        matched_custom_rule = rule
-                        break
 
             if not is_sink:
                 continue
