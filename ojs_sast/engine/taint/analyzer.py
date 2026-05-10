@@ -218,6 +218,15 @@ class TaintAnalyzer:
 
                 value_text = get_node_text(value_node, self.source_bytes)
 
+                # AST-Based Cast Expression Sanitization (Type Casting)
+                is_cast_sanitized = False
+                if value_node.type == "cast_expression":
+                    type_node = value_node.child_by_field_name("type")
+                    if type_node:
+                        cast_text = get_node_text(type_node, self.source_bytes).strip().lower()
+                        if cast_text in ["(int)", "(integer)", "(float)", "(double)", "(real)", "(bool)", "(boolean)"]:
+                            is_cast_sanitized = True
+
                 # Taint Truncation: if the value comes from a DB fetch
                 # function, do NOT propagate taint — DB output is trusted.
                 is_db_fetch = any(p.search(value_text) for p in _DB_FETCH_REGEXES)
@@ -237,7 +246,10 @@ class TaintAnalyzer:
                         # Check if value passes through a sanitizer
                         is_san = False
                         san_cat = None
-                        if is_sanitizer(value_text):
+                        if is_cast_sanitized:
+                            is_san = True
+                            san_cat = "type_cast"
+                        elif is_sanitizer(value_text):
                             is_san = True
                             san_cat = get_sanitizer_category(value_text)
                         else:
@@ -374,6 +386,13 @@ class TaintAnalyzer:
                                 if var not in vars_in_first:
                                     continue  # Safe context, bound parameter
 
+                        # Strict Sink-to-Rule Binding
+                        if tainted.custom_rule:
+                            if matched_custom_rule and matched_custom_rule.id == tainted.custom_rule.id:
+                                pass # Valid
+                            else:
+                                continue # Skip: custom source didn't hit ITS intended custom sink
+
                         line = get_line_number(node)
                         self._create_finding(
                             tainted, func_name, full_call, line, sink_cats, matched_custom_rule
@@ -412,6 +431,10 @@ class TaintAnalyzer:
                             continue
                         if any(pat.search(tainted.sanitized_by) for pat in self._compiled_custom_sanitizers):
                             continue
+
+                    # Strict Sink-to-Rule Binding for generic echo
+                    if tainted.custom_rule:
+                        continue # Skip: a custom source should hit its specific custom sink, not generic echo
 
                     line = get_line_number(node)
                     self._create_finding(

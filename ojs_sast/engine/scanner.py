@@ -292,12 +292,20 @@ class ScanOrchestrator:
         unique_findings = []
         for finding in findings:
             # Create a unique signature for the finding
-            signature = (
-                finding.file_path,
-                finding.line_start,
-                finding.rule_id,
-                finding.category.value,
-            )
+            if finding.taint_path:
+                signature = (
+                    finding.file_path,
+                    finding.taint_path.source_location,
+                    finding.taint_path.sink,
+                    finding.rule_id,
+                )
+            else:
+                signature = (
+                    finding.file_path,
+                    finding.line_start,
+                    finding.rule_id,
+                    finding.category.value,
+                )
             if signature not in seen:
                 seen.add(signature)
                 unique_findings.append(finding)
