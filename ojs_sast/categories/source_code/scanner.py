@@ -25,7 +25,7 @@ TEMPLATE_EXTENSIONS = {".tpl", ".smarty"}
 ALL_EXTENSIONS = PHP_EXTENSIONS | JS_EXTENSIONS | TEMPLATE_EXTENSIONS
 
 # Directories to exclude
-EXCLUDE_DIRS = {"cache", "lib/vendor", "node_modules", ".git", "__pycache__", ".svn", "tests", "tools", "lib/pkp/tests", "lib/pkp/tools"}
+EXCLUDE_DIRS = {"cache", "lib/vendor", "node_modules", ".git", "__pycache__", ".svn", "tests", "tools", "lib/pkp/tests", "lib/pkp/tools", "classes/migration"}
 
 
 class SourceCodeScanner:

@@ -17,6 +17,7 @@ DEFAULT_EXCLUDE_DIRS = {
     "tools",
     "lib/pkp/tests",
     "lib/pkp/tools",
+    "classes/migration",
 }
 
 
