@@ -77,3 +77,15 @@ def parse_php_file(filepath: str) -> tuple[Any | None, bytes]:
 
     tree = parse_php(source_bytes)
     return tree, source_bytes
+
+
+def get_php_language():
+    """Return the tree-sitter PHP Language object.
+
+    Initializes the parser lazily if needed.
+
+    Returns:
+        tree_sitter.Language for PHP, or None if init fails.
+    """
+    _init_parser()
+    return _php_language

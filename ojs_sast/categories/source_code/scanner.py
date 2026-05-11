@@ -1,7 +1,7 @@
 """Source code scanner for OJS-SAST.
 
-Scans PHP, JS, and Smarty template files using taint analysis
-and YAML rule-based pattern matching.
+Scans PHP, JS, and Smarty template files using taint analysis,
+AST query evaluation, and YAML rule-based pattern matching.
 """
 
 import os
@@ -9,7 +9,8 @@ import re
 import fnmatch
 import uuid
 
-from ojs_sast.categories.source_code.php_parser import parse_php_file
+from ojs_sast.categories.source_code.php_parser import parse_php_file, get_php_language
+from ojs_sast.engine.ast_query_evaluator import evaluate_ast_query
 from ojs_sast.engine.taint.analyzer import TaintAnalyzer
 from ojs_sast.models.finding import Category, Finding, Severity, TaintPath
 from ojs_sast.models.rule import Rule
@@ -74,7 +75,7 @@ class SourceCodeScanner:
         return self.findings
 
     def _scan_php_file(self, filepath: str) -> None:
-        """Scan a single PHP file with taint analysis and pattern matching."""
+        """Scan a single PHP file with taint analysis, AST queries, and pattern matching."""
         tree, source_bytes = parse_php_file(filepath)
 
         # Run taint analysis if AST is available
@@ -91,6 +92,10 @@ class SourceCodeScanner:
                 self.findings.extend(taint_findings)
             except Exception as e:
                 logger.warning(f"Taint analysis failed for {filepath}: {e}")
+
+        # Run AST query evaluation for ast_pattern rules
+        if tree is not None:
+            self._scan_with_ast_queries(filepath, tree, source_bytes)
 
         # Run regex pattern matching from rules
         self._scan_with_patterns(filepath)
@@ -168,6 +173,78 @@ class SourceCodeScanner:
 
                 except re.error as e:
                     logger.warning(f"Invalid regex in rule {rule.id}: {e}")
+
+    def _scan_with_ast_queries(self, filepath: str, tree, source_bytes: bytes) -> None:
+        """Run tree-sitter AST queries from ast_pattern rules against a parsed PHP file."""
+        language = get_php_language()
+        if language is None:
+            return
+
+        content = None  # Lazy-loaded for require_absence checks
+
+        for rule in self.rules:
+            if not self._should_run_rule(rule, filepath):
+                continue
+
+            if not rule.pattern_match or rule.pattern_match.type != "ast_pattern":
+                continue
+
+            # Check require_absence against file text
+            if rule.pattern_match.require_absence:
+                if content is None:
+                    content = read_file_safe(filepath) or ""
+                if rule.pattern_match.require_absence in content:
+                    continue
+
+            # Extract AST query strings from raw_patterns
+            # (skip entries with type: "regex" — those are handled by _scan_with_patterns)
+            ast_queries: list[str] = []
+            for raw_p in rule.pattern_match.raw_patterns:
+                if isinstance(raw_p, dict):
+                    if raw_p.get("type") == "regex":
+                        continue  # Regex fallback, handled elsewhere
+                    query = raw_p.get("query", "")
+                    if query:
+                        ast_queries.append(query.strip())
+                # String entries are already normalized regex patterns; skip here
+
+            if not ast_queries:
+                continue
+
+            # Run each AST query against the tree
+            found_match = False
+            for query_str in ast_queries:
+                matches = evaluate_ast_query(query_str, tree, source_bytes, language)
+
+                for ast_match in matches:
+                    found_match = True
+                    line_num = ast_match.line
+                    snippet = get_code_snippet(filepath, line_num, context=2)
+                    self._finding_counter += 1
+
+                    finding = Finding(
+                        id=f"AST-{self._finding_counter:04d}",
+                        rule_id=rule.id,
+                        name=rule.name,
+                        description=rule.description,
+                        severity=Severity.from_string(rule.severity),
+                        category=Category.SOURCE_CODE,
+                        subcategory=rule.subcategory,
+                        file_path=filepath,
+                        line_start=line_num,
+                        line_end=line_num,
+                        code_snippet=snippet,
+                        cwe=rule.cwe,
+                        owasp=rule.owasp,
+                        cve_references=rule.cve_references,
+                        remediation=rule.remediation,
+                        references=rule.references,
+                        metadata={"matched_ast_text": ast_match.text[:200]},
+                    )
+                    self.findings.append(finding)
+
+                if found_match:
+                    break  # One query matched — no need to try the others for this rule
 
     def _should_run_rule(self, rule: Rule, filepath: str) -> bool:
         """Check if a rule should be run against a specific file based on path filters and version."""

@@ -151,6 +151,12 @@ class TaintAnalyzer:
                 continue
 
             value_text = get_node_text(value_node, self.source_bytes)
+            rhs_func = get_function_name(value_node, self.source_bytes)
+
+            # FIX: Do not taint Query Builder objects just because a source variable
+            # is used inside one of their closures.
+            if rhs_func in ('table', 'select', 'where', 'when', 'orWhere', 'join', 'from', 'whereIn'):
+                continue
 
             is_source = False
             source_cat = "unknown"
@@ -159,7 +165,14 @@ class TaintAnalyzer:
             if is_taint_source(value_text):
                 is_source = True
                 source_cat = get_source_category(value_text) or "unknown"
-            else:
+
+                # FIX: If the generic source is a file read but contains NO variables (no '$'),
+                # it is a static file read (like /dev/urandom) and is safe.
+                if any(x in value_text for x in ('file_get_contents', 'fread', 'fopen')):
+                    if '$' not in value_text:
+                        is_source = False
+
+            if not is_source:
                 for pat, rule in self._compiled_custom_sources.items():
                     if pat.search(value_text):
                         is_source = True
@@ -309,16 +322,18 @@ class TaintAnalyzer:
             sink_cats = []
             matched_custom_rule = None
 
+            if is_taint_sink(func_name):
+                is_sink = True
+                sink_cats = get_sink_categories(func_name)
+
+            # Check custom sinks against func_name, NOT the giant full_call block.
             for pat, rule in self._compiled_custom_sinks.items():
-                if pat.search(full_call):
+                # FIX: Append '(' to satisfy the regex that expects a function call pattern.
+                if pat.search(f"{func_name}("):
                     is_sink = True
                     sink_cats = [rule.subcategory or "custom_sink"]
                     matched_custom_rule = rule
                     break
-
-            if not is_sink and is_taint_sink(func_name):
-                is_sink = True
-                sink_cats = get_sink_categories(func_name)
 
             if not is_sink:
                 continue
