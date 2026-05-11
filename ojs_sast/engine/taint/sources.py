@@ -70,18 +70,22 @@ _STRING_LITERAL_RE = re.compile(
 )
 
 
-def _build_source_regex(identifier: str) -> re.Pattern:
+def _build_source_regex(identifier: str, is_method: bool = False) -> re.Pattern:
     """Build a compiled regex for a source identifier.
 
     - Superglobals ($-prefixed): use a negative lookbehind so that
       e.g. $_GET doesn't match inside $my_GET_value.
-    - Standard functions/methods: must NOT be preceded by $ or ->,
+    - Methods: must be preceded by -> and followed by (.
+    - Standard functions: must NOT be preceded by $ or ->,
       and must be followed by an opening parenthesis.
     """
     if identifier.startswith("$"):
         # Escape the $ and bracket chars, use lookbehind for safety
         escaped = re.escape(identifier)
         return re.compile(rf"(?<![a-zA-Z0-9_]){escaped}\b")
+    elif is_method:
+        # Require: preceded by -> and followed by (
+        return re.compile(rf"->{re.escape(identifier)}\s*\(")
     else:
         # Require: not preceded by $ or ->, and followed by (
         return re.compile(rf"(?<!\$)(?<!->)\b{re.escape(identifier)}\s*\(")
@@ -95,8 +99,9 @@ for _cat_name, _identifiers in {
     "file_reads": FILE_READS,
     "env_vars": ENV_VARS,
 }.items():
+    is_method = (_cat_name == "ojs_request")
     _SOURCE_REGEXES[_cat_name] = [
-        (ident, _build_source_regex(ident)) for ident in _identifiers
+        (ident, _build_source_regex(ident, is_method=is_method)) for ident in _identifiers
     ]
 
 # Also compile DATABASE_READS for get_source_category (but NOT for is_taint_source)

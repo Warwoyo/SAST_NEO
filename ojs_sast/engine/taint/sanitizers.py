@@ -25,6 +25,9 @@ SANITIZERS: dict[str, frozenset[str]] = {
     "command": frozenset([
         "escapeshellarg", "escapeshellcmd",
     ]),
+    "url": frozenset([
+        "filter_var", "parse_url",
+    ]),
     "general": frozenset([
         "filter_var", "filter_input", "preg_replace",
         "ctype_alpha", "ctype_digit", "ctype_alnum",
@@ -95,7 +98,7 @@ def is_effective_sanitizer(sanitizer_text: str, sink_category: str) -> bool:
         "xss": "xss",
         "file_ops": "path",
         "rce": "command",
-        "ssrf": "path",
+        "ssrf": "url",
         "xxe": None,
         "deserialization": None,
         "header_injection": "general",

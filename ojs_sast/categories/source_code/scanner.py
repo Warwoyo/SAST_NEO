@@ -31,11 +31,19 @@ EXCLUDE_DIRS = {"cache", "lib/vendor", "node_modules", ".git", "__pycache__", ".
 class SourceCodeScanner:
     """Scans source code files for security vulnerabilities."""
 
-    def __init__(self, rules: list[Rule], target_path: str, disable_taint: bool = False, ojs_version: str | None = None) -> None:
+    def __init__(
+        self,
+        rules: list[Rule],
+        target_path: str,
+        disable_taint: bool = False,
+        ojs_version: str | None = None,
+        use_builtin_taint: bool = False,
+    ) -> None:
         self.rules = [r for r in rules if r.category == "source_code"]
         self.target_path = os.path.abspath(target_path)
         self.disable_taint = disable_taint
         self.ojs_version = ojs_version
+        self.use_builtin_taint = use_builtin_taint
         self.findings: list[Finding] = []
         self.files_scanned = 0
         self._finding_counter = 0
@@ -86,6 +94,7 @@ class SourceCodeScanner:
                     filepath, tree, source_bytes,
                     finding_id_offset=self._taint_finding_counter,
                     custom_rules=applicable_taint_rules,
+                    use_builtin_taint=self.use_builtin_taint,
                 )
                 taint_findings = analyzer.analyze()
                 self._taint_finding_counter = analyzer._finding_counter
@@ -106,7 +115,16 @@ class SourceCodeScanner:
         if not content:
             return
 
+        _, ext = os.path.splitext(filepath)
+        ext = ext.lower()
+
+        # Pre-compute lines to ignore (comments and strings)
+        ignored_lines = self._get_comment_and_string_lines(content)
+
         for rule in self.rules:
+            if rule.taint_analysis and ext in PHP_EXTENSIONS and not self.disable_taint:
+                continue  # Taint analyzer handles this rule for PHP files
+
             if not self._should_run_rule(rule, filepath):
                 continue
 
@@ -141,7 +159,10 @@ class SourceCodeScanner:
                         line_num = content[:match.start()].count("\n") + 1
                         matched_text = match.group(0)
 
-                        # Skip if this is likely a false positive (in comments)
+                        # Skip if the match falls inside a block comment, string, or inline comment
+                        if line_num in ignored_lines:
+                            continue
+                        
                         line_text = content.splitlines()[line_num - 1] if line_num <= len(content.splitlines()) else ""
                         stripped = line_text.lstrip()
                         if stripped.startswith("//") or stripped.startswith("*") or stripped.startswith("#"):
@@ -273,3 +294,51 @@ class SourceCodeScanner:
                 return False
 
         return True
+
+    @staticmethod
+    def _get_comment_and_string_lines(content: str) -> set[int]:
+        """Pre-compute lines that are part of block comments, strings, or inline comments."""
+        ignored_lines = set()
+        in_block_comment = False
+        in_string = False
+        string_char = ''
+        
+        lines = content.splitlines()
+        for i, line in enumerate(lines):
+            line_num = i + 1
+            j = 0
+            while j < len(line):
+                if in_block_comment:
+                    ignored_lines.add(line_num)
+                    if line[j:j+2] == '*/':
+                        in_block_comment = False
+                        j += 2
+                        continue
+                elif in_string:
+                    ignored_lines.add(line_num)
+                    if line[j] == '\\':
+                        j += 2
+                        continue
+                    if line[j] == string_char:
+                        in_string = False
+                else:
+                    if line[j:j+2] == '/*':
+                        in_block_comment = True
+                        ignored_lines.add(line_num)
+                        j += 2
+                        continue
+                    elif line[j:j+2] == '//' or line[j] == '#':
+                        # Rest of the line is a comment
+                        ignored_lines.add(line_num)
+                        break
+                    elif line[j] in ("'", '"'):
+                        in_string = True
+                        string_char = line[j]
+                        ignored_lines.add(line_num)
+                j += 1
+                
+            # If the whole line was inside a block comment or string, or we finished a line while still inside
+            if in_block_comment or in_string:
+                ignored_lines.add(line_num)
+                
+        return ignored_lines

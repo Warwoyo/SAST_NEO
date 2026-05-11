@@ -112,12 +112,20 @@ class Rule:
                 note=config_data.get("note", ""),
             )
 
+        category = data.get("category", "")
+        scan_scope = data.get("scan_scope")
+        include_paths = data.get("include_paths", [])
+        if not include_paths and isinstance(scan_scope, dict):
+            file_paths = scan_scope.get("file_paths")
+            if category == "source_code" and isinstance(file_paths, list) and file_paths:
+                include_paths = file_paths
+
         return cls(
             id=data["id"],
             name=data["name"],
             description=data.get("description", ""),
             severity=data.get("severity", "MEDIUM"),
-            category=data.get("category", ""),
+            category=category,
             subcategory=data.get("subcategory", ""),
             cwe=data.get("cwe"),
             owasp=data.get("owasp"),
@@ -127,14 +135,14 @@ class Rule:
             taint_analysis=taint_config,
             pattern_match=pattern_config,
             config_check=config_check,
-            include_paths=data.get("include_paths", []),
+            include_paths=include_paths,
             exclude_paths=data.get("exclude_paths", []),
             remediation=data.get("remediation", ""),
             references=data.get("references", []),
             false_positive_notes=data.get("false_positive_notes", ""),
             # Extended fields from scientific ruleset
             confidence=data.get("confidence", ""),
-            scan_scope=data.get("scan_scope"),
+            scan_scope=scan_scope,
             false_positive_conditions=data.get("false_positive_conditions", []),
             config_section=data.get("config_section", ""),
             config_key=data.get("config_key", ""),

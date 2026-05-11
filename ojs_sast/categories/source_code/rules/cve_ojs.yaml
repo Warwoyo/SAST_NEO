@@ -337,12 +337,12 @@ rules:
               (assignment_expression
                 left: (subscript_expression
                   object: (variable_name) @var
-                  (#match? @var "\\$additionalLessVariables")
+                  (#match? @var "additionalLessVariables")
                 )
                 right: (binary_expression
                   operator: "."
                   (member_call_expression
-                    object: (variable_name) @this (#eq? @this "$this")
+                    object: (variable_name) @this (#match? @this "\\$?this")
                     name: (name) @method (#eq? @method "getOption")
                   )
                 )
@@ -437,12 +437,12 @@ rules:
               (assignment_expression
                 left: (subscript_expression
                   object: (variable_name) @var
-                  (#match? @var "\\$additionalLessVariables")
+                  (#match? @var "additionalLessVariables")
                 )
                 right: (binary_expression
                   operator: "."
                   (member_call_expression
-                    object: (variable_name) @this (#eq? @this "$this")
+                    object: (variable_name) @this (#match? @this "\\$?this")
                     name: (name) @method (#eq? @method "getOption")
                   )
                 )
@@ -812,7 +812,7 @@ rules:
             (expression_statement
               (assignment_expression
                 left: (subscript_expression
-                  object: (variable_name) @arr (#match? @arr "\\$coverImage")
+                  object: (variable_name) @arr (#match? @arr "coverImage")
                   index: (string (string_value) @key (#eq? @key "uploadName"))
                 )
                 right: (member_access_expression
@@ -979,7 +979,7 @@ rules:
         - description: "Regex — constructor initializing form checks without CSRF validator"
           type: "regex"
           query: >
-            (?s)public\s+function\s+__construct\s*\(\s*\)\s*\{(?:(?!FormValidatorCSRF).)*?manager\.payment\.form
+            (?s)public\s+function\s+__construct\s*\(\s*\)\s*\{(?![\s\S]*FormValidatorCSRF)[\s\S]*?manager\.payment\.form
     false_positive_conditions:
       - id: "FP-007-A"
         verdict: "SAFE — suppress alert"
@@ -1648,10 +1648,10 @@ rules:
       patterns:
         - description: "Ternary with raw getTitle() in AjaxModal title argument (no htmlspecialchars)"
           query: >
-            new\s+AjaxModal\s*\(\s*[^,]+,\s*\$\w+\s*\?\s*\$\w+->getTitle\(\)\s*:\s*['"]?&?[a-z;-]+['"]?,
+            new\s+AjaxModal\s*\(\s*[^,]+,\s*\$\w+\s*\?\s*\$\w+->getTitle\(\)\s*:\s*['"]?&?[a-z;-]+['"]?\s*,
         - description: "getTitle() passed to AjaxModal 2nd-position without htmlspecialchars wrapper"
           query: >
-            new\s+AjaxModal\s*\([^)]*,\s*(?!.*htmlspecialchars)\$\w+->getTitle\(\)
+            new\s+AjaxModal\s*\(\s*[^,]+,\s*(?![^)]*htmlspecialchars)\$\w+->getTitle\(\)
       ast_patterns:
         - description: "AjaxModal instantiation where 2nd arg contains a bare getTitle() call"
           query: >
@@ -1777,10 +1777,10 @@ rules:
       patterns:
         - description: "Ternary with raw getTitle() in AjaxModal title argument"
           query: >
-            new\s+AjaxModal\s*\(\s*[^,]+,\s*\$\w+\s*\?\s*\$\w+->getTitle\(\)\s*:\s*['"]?&?[a-z;-]+['"]?,
+            new\s+AjaxModal\s*\(\s*[^,]+,\s*\$\w+\s*\?\s*\$\w+->getTitle\(\)\s*:\s*['"]?&?[a-z;-]+['"]?\s*,
         - description: "getTitle() in AjaxModal 2nd position without htmlspecialchars"
           query: >
-            new\s+AjaxModal\s*\([^)]*,\s*(?!.*htmlspecialchars)\$\w+->getTitle\(\)
+            new\s+AjaxModal\s*\(\s*[^,]+,\s*(?![^)]*htmlspecialchars)\$\w+->getTitle\(\)
       ast_patterns:
         - description: "AjaxModal instantiation where 2nd arg contains a bare getTitle() call"
           query: >
